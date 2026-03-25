@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# file: gibbs.py
+# file: thermodynamics.py
 
 # This code is part of Onça-pintada.
 # MIT License
@@ -30,11 +30,11 @@ from ase import Atoms
 
 class GibbsFreeEnergy:
     """
-    Class to work with tabulated Gibbs free energy G(T, x) stored in a pandas DataFrame.
+    Class to work with tabulated Gibbs free energy G(x,T) stored in a pandas DataFrame.
 
-    - Rows (index) are temperatures T.
-    - Columns are compositions x.
-    - Values are G(T, x).
+    - Rows (index) are compositions x.
+    - Columns are temperatures T.
+    - Values are G(x, T).
 
     Main methods:
     - dGdx()                -> returns a DataFrame with the first derivative (∂G/∂x).
@@ -42,17 +42,20 @@ class GibbsFreeEnergy:
     - spinodal_decomposition() -> returns spinodal curve(s) x(T) from sign changes in ∂²G/∂x².
     """
 
-    def __init__(self, gibbs_df: pd.DataFrame, x_values=None, atoms: Atoms | None = None):
+    def __init__(self, gibbs_df: pd.DataFrame, x_values=None, temperatures=None, atoms: Atoms | None = None):
         """
         Parameters
         ----------
         gibbs_df : pd.DataFrame
-            DataFrame with G(T, x):
-            - index: temperatures T (float or int).
-            - columns: compositions x (float or convertible to float).
-            - values: Gibbs free energy G(T, x).
+            DataFrame with G(x, T):
+            - index: compositions x (float or convertible to float).
+            - columns: temperatures T (float or int).
+            - values: Gibbs free energy G(x, T).
         x_values : array-like, optional
-            Values of x corresponding to the columns.
+            Values of x corresponding to the index.
+            If None, attempts to convert the index labels to float.
+        temperatures : array-like, optional
+            Values of temperatures corresponding to the columns.
             If None, attempts to convert the column labels to float.
         atoms : ase.Atoms, optional
             Atoms object associated with the thermodynamic data (optional).
@@ -62,19 +65,27 @@ class GibbsFreeEnergy:
 
         # Define composition axis x
         if x_values is None:
-            self.x = np.array(self.gibbs.columns, dtype=float)
-            self.gibbs.columns = self.x
+            self.x = np.array(self.gibbs.index, dtype=float)
+            self.gibbs.index = self.x
         else:
             self.x = np.array(x_values, dtype=float)
-            if len(self.x) != self.gibbs.shape[1]:
+            if len(self.x) != self.gibbs.shape[0]:
                 raise ValueError(
-                    "x_values must have the same length as the number of columns in gibbs_df."
+                    "x_values must have the same length as the number of rows in gibbs_df."
                 )
-            self.gibbs.columns = self.x
+            self.gibbs.index = self.x
 
         # Define temperature axis T
-        self.T = np.array(self.gibbs.index, dtype=float)
-        self.gibbs.index = self.T
+        if temperatures is None:
+            self.T = np.array(self.gibbs.columns, dtype=float)
+            self.gibbs.columns = self.T
+        else:
+            self.T = np.array(temperatures, dtype=float)
+            if len(self.T) != self.gibbs.shape[1]:
+                raise ValueError(
+                    "temperatures must have the same length as the number of columns in gibbs_df."
+                )
+            self.gibbs.columns = self.T
 
         # Optional Atoms object
         self.atoms = atoms
@@ -89,11 +100,11 @@ class GibbsFreeEnergy:
         Returns
         -------
         pd.DataFrame
-            DataFrame with the same index (T) and columns (x),
-            containing (∂G/∂x)(T, x).
+            DataFrame with the same index (x) and columns (T),
+            containing (∂G/∂x)(x, T).
         """
-        G = self.gibbs.values  # shape: (nT, nX)
-        dGdx_array = np.gradient(G, self.x, axis=1, edge_order=2)
+        G = self.gibbs.values  # shape: (nX, nT)
+        dGdx_array = np.gradient(G, self.x, axis=0, edge_order=2)
 
         dGdx_df = pd.DataFrame(dGdx_array, index=self.gibbs.index, columns=self.gibbs.columns)
         return dGdx_df
@@ -103,21 +114,21 @@ class GibbsFreeEnergy:
     # ------------------------------------------------------------------
     def d2Gdx2(self) -> pd.DataFrame:
         """
-        Compute the second derivative ∂²G/∂x² from G(T, x)
+        Compute the second derivative ∂²G/∂x² from G(x, T)
         using two calls to np.gradient along x.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with the same index (T) and columns (x),
-            containing (∂²G/∂x²)(T, x).
+            DataFrame with the same index (x) and columns (T),
+            containing (∂²G/∂x²)(x, T).
         """
-        G = self.gibbs.values  # (nT, nX)
+        G = self.gibbs.values  # (nX, nT)
 
         # First derivative
-        dGdx = np.gradient(G, self.x, axis=1, edge_order=2)
+        dGdx = np.gradient(G, self.x, axis=0, edge_order=2)
         # Second derivative
-        d2Gdx2_array = np.gradient(dGdx, self.x, axis=1, edge_order=2)
+        d2Gdx2_array = np.gradient(dGdx, self.x, axis=0, edge_order=2)
 
         d2Gdx2_df = pd.DataFrame(d2Gdx2_array, index=self.gibbs.index, columns=self.gibbs.columns)
         return d2Gdx2_df
@@ -132,7 +143,7 @@ class GibbsFreeEnergy:
 
         Algorithm
         ---------
-        - Compute ∂²G/∂x² on the (T, x) grid.
+        - Compute ∂²G/∂x² on the (x, T) grid.
         - For each row (fixed T):
             * Scan adjacent points in x: (x_j, x_{j+1}).
             * Look for sign changes in d2Gdx2(T, x_j) and d2Gdx2(T, x_{j+1}),
@@ -156,14 +167,14 @@ class GibbsFreeEnergy:
             no spinodal crossing is found.
         """
         d2_df = self.d2Gdx2()
-        d2 = d2_df.values  # shape: (nT, nX)
+        d2 = d2_df.values  # shape: (nX, nT)
         x = self.x
-        nT, nX = d2.shape
+        nX, nT = d2.shape
 
         spinodal_points = []
 
         for iT in range(nT):
-            row = d2[iT, :]
+            row = d2[:, iT]
             xs_found = []
 
             for j in range(nX - 1):
@@ -208,3 +219,72 @@ class GibbsFreeEnergy:
 
         spinodal_df = pd.DataFrame(spinodal_points, index=self.gibbs.index, columns=["x1", "x2"])
         return spinodal_df
+
+
+    # ------------------------------------------------------------------
+    # Binodal curve
+    # ------------------------------------------------------------------
+    def binodal_curve(self, atol: float = 1e-8) -> pd.DataFrame:
+        """
+        Compute the binodal curve (coexistence curve) from G(x, T) using the common tangent construction.
+
+        Algorithm
+        ---------
+        - For each T, scan pairs of compositions (x_i, x_j) with i < j.
+        - Check if the line connecting (x_i, G_i) and (x_j, G_j) is a common tangent:
+        * Slope m = (G_j - G_i) / (x_j - x_i)
+        * Check if m is less than or equal to the local slope at x_i: m <= dGdx(T, x_i)
+        * Check if m is greater than or equal to the local slope at x_j: m >= dGdx(T, x_j)
+        * Also check if the line is below G(x) for all x in between (convexity condition).
+        - Keep track of the pair (x_i, x_j) that satisfies these conditions and has the largest gap (x_j - x_i).
+        - Return the pairs (x_i, x_j) for each T as the binodal points.
+
+        Parameters
+        ----------
+        atol : float, optional
+            Absolute tolerance for numerical comparisons. Default is 1e-8.
+
+        Returns
+        -------
+        pd.DataFrame
+            Index: temperatures T.
+            Columns: 'x1', 'x2', containing the first and second binodal
+            compositions (if they exist) for each T. Entries are np.nan where
+            no binodal crossing is found.
+        """
+
+        G = self.gibbs.values  # shape: (nX, nT)
+        x = self.x
+        T = self.T
+        dGdx_df = self.dGdx()
+        dGdx = dGdx_df.values  # shape: (nX, nT)
+
+        nX, nT = G.shape
+        binodal_points = []
+
+        for iT in range(nT):
+            best_pair = (np.nan, np.nan)
+            best_gap = -np.inf
+
+            for i in range(nX):
+                for j in range(i + 1, nX):
+                    x_i, x_j = x[i], x[j]
+                    G_i, G_j = G[i, iT], G[j, iT]
+                    m = (G_j - G_i) / (x_j - x_i)
+
+                    if m <= dGdx[i, iT] + atol and m >= dGdx[j, iT] - atol:
+                        # Check convexity condition: line must be below G(x) for all x in (x_i, x_j)
+                        x_mid = np.linspace(x_i, x_j, 10)
+                        G_mid_line = G_i + m * (x_mid - x_i)
+                        G_mid_actual = np.interp(x_mid, x, G[:, iT])
+
+                        if np.all(G_mid_line <= G_mid_actual + atol):
+                            gap = x_j - x_i
+                            if gap > best_gap:
+                                best_gap = gap
+                                best_pair = (x_i, x_j)
+
+            binodal_points.append(best_pair)
+
+        binodal_df = pd.DataFrame(binodal_points, index=T, columns=["x1", "x2"])
+        return binodal_df
