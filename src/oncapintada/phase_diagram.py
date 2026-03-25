@@ -302,3 +302,47 @@ class PhaseDiagram:
         binodal_join_df.reset_index(drop=True, inplace=True)
 
         return binodal_join_df
+    
+    # ------------------------------------------------------------------
+    # Critical points
+    # ------------------------------------------------------------------
+    def critical_points(self, atol: float = 1e-8) -> pd.DataFrame:
+        """
+        Find critical points where both ∂G/∂x = 0 and ∂²G/∂x² = 0.
+
+        Algorithm
+        ---------
+        - Compute ∂G/∂x and ∂²G/∂x² on the (x, T) grid.
+        - For each T, scan points in x:
+            * Check if |dGdx(T, x)| < atol and |d2Gdx2(T, x)| < atol.
+            * If both conditions are satisfied, consider (x, T) as a critical point.
+        - Return all critical points found.
+        Parameters
+        ----------
+        atol : float, optional
+            Absolute tolerance to treat values as zero.
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns "x" and "t", containing the critical points (x, T).
+        """
+        dGdx_df = self.dGdx()
+        d2Gdx2_df = self.d2Gdx2()
+
+        dGdx = dGdx_df.values  # shape: (nX, nT)
+        d2Gdx2 = d2Gdx2_df.values  # shape: (nX, nT)
+        x = self.x
+        T = self.T
+        nX, nT = dGdx.shape
+
+        critical_points = []
+
+        for iT in range(nT):
+            for j in range(nX):
+                if abs(dGdx[j, iT]) < atol and abs(d2Gdx2[j, iT]) < atol:
+                    critical_points.append((x[j], T[iT]))
+        
+        critical_df = pd.DataFrame(critical_points, columns=["x", "t"], dtype=np.float64)
+        critical_df.sort_values(by='x', inplace=True)
+        critical_df.reset_index(drop=True, inplace=True)
+        return critical_df
