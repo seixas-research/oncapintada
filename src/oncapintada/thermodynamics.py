@@ -28,9 +28,9 @@ import numpy as np
 import pandas as pd
 from ase import Atoms
 
-class GibbsFreeEnergy:
+class PhaseDiagram:
     """
-    Class to work with tabulated Gibbs free energy G(x,T) stored in a pandas DataFrame.
+    Class to work with tabulated Gibbs free energy G(x,T) stored in a pandas DataFrame, and calculate spinodal and binodal curves.
 
     - Rows (index) are compositions x.
     - Columns are temperatures T.
@@ -39,7 +39,8 @@ class GibbsFreeEnergy:
     Main methods:
     - dGdx()                -> returns a DataFrame with the first derivative (∂G/∂x).
     - d2Gdx2()              -> returns a DataFrame with the second derivative (∂²G/∂x²).
-    - spinodal_decomposition() -> returns spinodal curve(s) x(T) from sign changes in ∂²G/∂x².
+    - spinodal_curve()      -> returns spinodal curve(s) x(T) from sign changes in ∂²G/∂x².
+    - binodal_curve()       -> returns binodal curve(s) x(T) from common tangent construction on G(x, T).
     """
 
     def __init__(self, gibbs_df: pd.DataFrame, x_values=None, temperatures=None, atoms: Atoms | None = None):
@@ -134,9 +135,9 @@ class GibbsFreeEnergy:
         return d2Gdx2_df
 
     # ------------------------------------------------------------------
-    # Spinodal decomposition (sign change in second derivative)
+    # Spinodal curve (sign change in second derivative)
     # ------------------------------------------------------------------
-    def spinodal_decomposition(self, atol: float = 1e-8) -> pd.DataFrame:
+    def spinodal_curve(self, atol: float = 1e-8) -> pd.DataFrame:
         """
         Find, for each T, the composition(s) x where the second derivative ∂²G/∂x²
         changes sign (spinodal boundaries).
@@ -217,8 +218,20 @@ class GibbsFreeEnergy:
 
             spinodal_points.append((x1, x2))
 
-        spinodal_df = pd.DataFrame(spinodal_points, index=self.gibbs.index, columns=["x1", "x2"])
-        return spinodal_df
+        spinodal_join = []
+        for iT, (x1, x2) in enumerate(spinodal_points):
+            if not np.isnan(x1):
+                spinodal_join.append((x1, self.T[iT]))
+            if not np.isnan(x2):
+                spinodal_join.append((x2, self.T[iT]))
+
+        spinodal_join_df = pd.DataFrame(spinodal_join, columns=["x", "T"])
+        spinodal_join_df.set_index("T", inplace=True)
+
+        return spinodal_join_df
+
+        # spinodal_df = pd.DataFrame(spinodal_points, index=self.gibbs.index, columns=["x1", "x2"])
+        # return spinodal_df
 
 
     # ------------------------------------------------------------------
@@ -247,9 +260,8 @@ class GibbsFreeEnergy:
         Returns
         -------
         pd.DataFrame
-            Index: temperatures T.
-            Columns: 'x1', 'x2', containing the first and second binodal
-            compositions (if they exist) for each T. Entries are np.nan where
+            Index: Compositions x.
+            Column: Temperatures T.
             no binodal crossing is found.
         """
 
@@ -286,5 +298,16 @@ class GibbsFreeEnergy:
 
             binodal_points.append(best_pair)
 
-        binodal_df = pd.DataFrame(binodal_points, index=T, columns=["x1", "x2"])
-        return binodal_df
+        # concatenate (T,x1) and (T, x2) in a single (T, x) DataFrame
+        binodal_join = []
+        for iT, (x1, x2) in enumerate(binodal_points):
+            if not np.isnan(x1):
+                binodal_join.append((x1, T[iT]))
+            if not np.isnan(x2):
+                binodal_join.append((x2, T[iT]))
+
+        binodal_join_df = pd.DataFrame(binodal_join, columns=["x", "T"])
+        binodal_join_df.set_index("T", inplace=True)
+
+        # binodal_df = pd.DataFrame(binodal_points, index=T, columns=["x1", "x2"])
+        return binodal_join_df
