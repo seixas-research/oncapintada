@@ -162,10 +162,7 @@ class PhaseDiagram:
         Returns
         -------
         pd.DataFrame
-            Index: temperatures T.
-            Columns: 'x1', 'x2', containing the first and second spinodal
-            compositions (if they exist) for each T. Entries are np.nan where
-            no spinodal crossing is found.
+            DataFrame with columns "x" and "t", containing the spinodal points (x, T).
         """
         d2_df = self.d2Gdx2()
         d2 = d2_df.values  # shape: (nX, nT)
@@ -225,8 +222,9 @@ class PhaseDiagram:
             if not np.isnan(x2):
                 spinodal_join.append((x2, self.T[iT]))
 
-        spinodal_join_df = pd.DataFrame(spinodal_join, columns=["x", "T"])
-        spinodal_join_df.set_index("T", inplace=True)
+        spinodal_join_df = pd.DataFrame(spinodal_join, columns=["x", "t"])
+        # spinodal_join_df.set_index("t", inplace=True)
+        spinodal_join_df.sort_values(by='x', inplace=True)
 
         return spinodal_join_df
 
@@ -260,9 +258,8 @@ class PhaseDiagram:
         Returns
         -------
         pd.DataFrame
-            Index: Compositions x.
-            Column: Temperatures T.
-            no binodal crossing is found.
+            DataFrame with columns "x" and "t", containing the binodal points (x, T).
+            Each T may have up to two x values corresponding to the two sides of the coexistence curve.
         """
 
         G = self.gibbs.values  # shape: (nX, nT)
@@ -306,8 +303,9 @@ class PhaseDiagram:
             if not np.isnan(x2):
                 binodal_join.append((x2, T[iT]))
 
-        binodal_join_df = pd.DataFrame(binodal_join, columns=["x", "T"])
-        binodal_join_df.set_index("T", inplace=True)
 
-        # binodal_df = pd.DataFrame(binodal_points, index=T, columns=["x1", "x2"])
+        binodal_join_df = pd.DataFrame(binodal_join, columns=["x", "t"], index=True)
+        # binodal_join_df.set_index("t", inplace=True)
+        binodal_join_df.sort_values(by='x', inplace=True)
+
         return binodal_join_df
