@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# file: MCMC.py
+# file: markov_chain.py
 
 # This code is part of Onça-pintada.
 # MIT License

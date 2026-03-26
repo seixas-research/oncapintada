@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# file: vibrational.py
+# file: cvm.py
 
 # This code is part of Onça-pintada.
 # MIT License
@@ -24,8 +24,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-class Vibrational:
-    '''Class for vibrational properties of materials.'''
+import pandas as pd
+
+class ClusterVariationMethod:
+    '''
+    Cluster Variation Method (CVM) for thermodynamic modeling of alloys.
+    '''
     def __init__(self):
         pass
-
+        
+    

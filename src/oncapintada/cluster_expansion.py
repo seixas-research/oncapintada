@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# file: vibrational.py
+# file: cluster_expansion.py
 
 # This code is part of Onça-pintada.
 # MIT License
@@ -23,9 +23,3 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
-class Vibrational:
-    '''Class for vibrational properties of materials.'''
-    def __init__(self):
-        pass
-
