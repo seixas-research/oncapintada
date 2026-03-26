@@ -23,3 +23,34 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
+class SQSGenerator:
+    '''Special Quasirandom Structure (SQS) generator for modeling disordered alloys.
+
+    Parameters
+    ----------
+    structure : str
+        The crystal structure of the alloy (e.g., "fcc", "bcc", "hcp").
+    size : tuple
+        The size of the supercell to generate (e.g., (2, 2, 2) for a 2x2x2 supercell).
+    composition : dict
+        A dictionary specifying the composition of the alloy (e.g., {"A": 0.5, "B": 0.5} for a 50-50 binary alloy).
+    '''
+
+    def __init__(self, structure: str, size: tuple, composition: dict):
+        self.structure = structure
+        self.size = size
+        self.composition = composition
+
+    def generate(self):
+        '''
+        Generate the SQS structure based on the specified parameters.
+        '''
+        raise NotImplementedError("SQS generation algorithm is not implemented yet.")
+    
+    
+    def calculate_correlation_functions(self):
+        '''
+        Calculate the correlation functions for the generated SQS structure.
+        '''
+        raise NotImplementedError("Correlation function calculation is not implemented yet.")
