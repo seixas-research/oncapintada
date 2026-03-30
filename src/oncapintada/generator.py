@@ -54,3 +54,18 @@ class SQSGenerator:
         Calculate the correlation functions for the generated SQS structure.
         '''
         raise NotImplementedError("Correlation function calculation is not implemented yet.")
+    
+
+# To generate structures with a given target correlation function using Monte Carlo sampling.
+class ReverseMonteCarlo:
+    def __init__(self, atoms: Optional[Atoms] = None, composition=None, target=None):
+        self.atoms = atoms
+        self.composition = composition
+        self.target = target
+
+# To generate SQS structures for a given composition and lattice type.
+class SQS:
+    def __init__(self, atoms: Optional[Atoms] = None, composition=None, method='monte_carlo'):
+        self.atoms = atoms
+        self.composition = composition
+        self.method = method
