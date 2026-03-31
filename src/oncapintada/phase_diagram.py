@@ -29,17 +29,17 @@ import pandas as pd
 
 class PhaseDiagram:
     """
-    Class to work with tabulated Gibbs free energy G(x,T) stored in a pandas DataFrame, and calculate spinodal and binodal curves.
+    Class to work with tabulated Gibbs free energy G(x,t) stored in a pandas DataFrame, and calculate spinodal and binodal curves.
 
     - Rows (index) are compositions x.
-    - Columns are temperatures T.
-    - Values are G(x, T).
+    - Columns are temperatures t.
+    - Values are G(x, t).
 
     Main methods:
     - dGdx()                -> returns a DataFrame with the first derivative (∂G/∂x).
     - d2Gdx2()              -> returns a DataFrame with the second derivative (∂²G/∂x²).
     - spinodal_curve()      -> returns spinodal curve from sign changes in ∂²G/∂x².
-    - binodal_curve()       -> returns binodal curve from common tangent construction on G(x, T).
+    - binodal_curve()       -> returns binodal curve from common tangent construction on G(x, t).
     """
 
     def __init__(self, gibbs_df: pd.DataFrame, x_values=None, t_values=None):
@@ -47,10 +47,10 @@ class PhaseDiagram:
         Parameters
         ----------
         gibbs_df : pd.DataFrame
-            DataFrame with G(x, T):
+            DataFrame with G(x, t):
             - index: compositions x (float or convertible to float).
-            - columns: temperatures T (float or int).
-            - values: Gibbs free energy G(x, T).
+            - columns: temperatures t (float or int).
+            - values: Gibbs free energy G(x, t).
         x_values : array-like, optional
             Values of x corresponding to the index.
             If None, attempts to convert the index labels to float.
@@ -80,17 +80,17 @@ class PhaseDiagram:
                 )
             self.gibbs.index = self.x
 
-        # Define temperature axis T
+        # Define temperature axis t
         if t_values is None:
-            self.T = np.array(self.gibbs.columns, dtype=float)
-            self.gibbs.columns = self.T
+            self.t = np.array(self.gibbs.columns, dtype=float)
+            self.gibbs.columns = self.t
         else:
-            self.T = np.array(t_values, dtype=float)
-            if len(self.T) != self.gibbs.shape[1]:
+            self.t = np.array(t_values, dtype=float)
+            if len(self.t) != self.gibbs.shape[1]:
                 raise ValueError(
                     "t_values must have the same length as the number of columns in gibbs_df."
                 )
-            self.gibbs.columns = self.T
+            self.gibbs.columns = self.t
 
 
     # ------------------------------------------------------------------
@@ -103,8 +103,8 @@ class PhaseDiagram:
         Returns
         -------
         pd.DataFrame
-            DataFrame with the same index (x) and columns (T),
-            containing (∂G/∂x)(x, T).
+            DataFrame with the same index (x) and columns (t),
+            containing (∂G/∂x)(x, t).
         """
         G = self.gibbs.values  # shape: (nX, nT)
         dGdx_array = np.gradient(G, self.x, axis=0, edge_order=2)
@@ -117,14 +117,14 @@ class PhaseDiagram:
     # ------------------------------------------------------------------
     def d2Gdx2(self) -> pd.DataFrame:
         """
-        Compute the second derivative ∂²G/∂x² from G(x, T)
+        Compute the second derivative ∂²G/∂x² from G(x, t)
         using two calls to np.gradient along x.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with the same index (x) and columns (T),
-            containing (∂²G/∂x²)(x, T).
+            DataFrame with the same index (x) and columns (t),
+            containing (∂²G/∂x²)(x, t).
         """
         G = self.gibbs.values  # (nX, nT)
 
@@ -141,20 +141,20 @@ class PhaseDiagram:
     # ------------------------------------------------------------------
     def spinodal_curve(self, atol: float = 1e-8) -> pd.DataFrame:
         """
-        Find, for each T, the composition(s) x where the second derivative ∂²G/∂x²
+        Find, for each t, the composition(s) x where the second derivative ∂²G/∂x²
         changes sign (spinodal boundaries).
 
         Algorithm
         ---------
-        - Compute ∂²G/∂x² on the (x, T) grid.
-        - For each row (fixed T):
+        - Compute ∂²G/∂x² on the (x, t) grid.
+        - For each row (fixed t):
             * Scan adjacent points in x: (x_j, x_{j+1}).
-            * Look for sign changes in d2Gdx2(T, x_j) and d2Gdx2(T, x_{j+1}),
+            * Look for sign changes in d2Gdx2(t, x_j) and d2Gdx2(t, x_{j+1}),
               i.e., y1 * y2 < 0.
             * Approximate the zero by linear interpolation between x_j and x_{j+1}.
             * Also treat values with |y| < atol as "numerical zeros"
               and include their corresponding x.
-        - For each T, keep up to two distinct x values (x1, x2), sorted.
+        - For each t, keep up to two distinct x values (x1, x2), sorted.
 
         Parameters
         ----------
@@ -164,11 +164,12 @@ class PhaseDiagram:
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns "x" and "t", containing the spinodal points (x, T).
+            DataFrame with columns "x" and "t", containing the spinodal points (x, t).
         """
         d2_df = self.d2Gdx2()
         d2 = d2_df.values  # shape: (nX, nT)
         x = self.x
+        t = self.t
         nX, nT = d2.shape
 
         spinodal_points = []
@@ -220,9 +221,9 @@ class PhaseDiagram:
         spinodal_join = []
         for iT, (x1, x2) in enumerate(spinodal_points):
             if not np.isnan(x1):
-                spinodal_join.append((x1, self.T[iT]))
+                spinodal_join.append((x1, self.t[iT]))
             if not np.isnan(x2):
-                spinodal_join.append((x2, self.T[iT]))
+                spinodal_join.append((x2, self.t[iT]))
 
         spinodal_join_df = pd.DataFrame(spinodal_join, columns=["x", "t"], dtype=np.float64)
         spinodal_join_df.sort_values(by='x', inplace=True)
@@ -235,18 +236,18 @@ class PhaseDiagram:
     # ------------------------------------------------------------------
     def binodal_curve(self, atol: float = 1e-8, ninterp: int = 10) -> pd.DataFrame:
         """
-        Compute the binodal curve (coexistence curve) from G(x, T) using the common tangent construction.
+        Compute the binodal curve (coexistence curve) from G(x, t) using the common tangent construction.
 
         Algorithm
         ---------
-        - For each T, scan pairs of compositions (x_i, x_j) with i < j.
+        - For each t, scan pairs of compositions (x_i, x_j) with i < j.
         - Check if the line connecting (x_i, G_i) and (x_j, G_j) is a common tangent:
         * Slope m = (G_j - G_i) / (x_j - x_i)
-        * Check if m is less than or equal to the local slope at x_i: m <= dGdx(T, x_i)
-        * Check if m is greater than or equal to the local slope at x_j: m >= dGdx(T, x_j)
+        * Check if m is less than or equal to the local slope at x_i: m <= dGdx(t, x_i)
+        * Check if m is greater than or equal to the local slope at x_j: m >= dGdx(t, x_j)
         * Also check if the line is below G(x) for all x in between (convexity condition).
         - Keep track of the pair (x_i, x_j) that satisfies these conditions and has the largest gap (x_j - x_i).
-        - Return the pairs (x_i, x_j) for each T as the binodal points.
+        - Return the pairs (x_i, x_j) for each t as the binodal points.
 
         Parameters
         ----------
@@ -258,13 +259,13 @@ class PhaseDiagram:
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns "x" and "t", containing the binodal points (x, T).
-            Each T may have up to two x values corresponding to the two sides of the coexistence curve.
+            DataFrame with columns "x" and "t", containing the binodal points (x, t).
+            Each t may have up to two x values corresponding to the two sides of the coexistence curve.
         """
 
         G = self.gibbs.values  # shape: (nX, nT)
         x = self.x             # shape: (nX,)
-        T = self.T             # shape: (nT,)
+        t = self.t             # shape: (nT,)
         dGdx_df = self.dGdx()  # shape: (nX, nT)
         dGdx = dGdx_df.values  # shape: (nX, nT)
 
@@ -299,9 +300,9 @@ class PhaseDiagram:
         binodal_join = []
         for iT, (x1, x2) in enumerate(binodal_points):
             if not np.isnan(x1):
-                binodal_join.append((x1, T[iT]))
+                binodal_join.append((x1, t[iT]))
             if not np.isnan(x2):
-                binodal_join.append((x2, T[iT]))
+                binodal_join.append((x2, t[iT]))
 
 
         binodal_join_df = pd.DataFrame(binodal_join, columns=["x", "t"], dtype=np.float64)
@@ -315,7 +316,7 @@ class PhaseDiagram:
     # ------------------------------------------------------------------
     def critical_point(self, atol: float = 1e-8, curve: str ="spinodal") -> pd.DataFrame:
         """
-        Show the critical points (x_c, T_c) where the spinodal or binodal curve reaches its maximum values.
+        Show the critical points (x_c, t_c) where the spinodal or binodal curve reaches its maximum values.
         """
         if curve == "spinodal":
             spinodal_df = self.spinodal_curve(atol=atol)
