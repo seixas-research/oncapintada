@@ -44,8 +44,36 @@ class BinaryAlloy:
     def set_energy_matrix(self, energy_matrix: Optional[np.ndarray] = None):
         self.energy_matrix = energy_matrix
 
+    # def get_Mij_deprecated(self):
+    #     M = np.zeros_like(self.energy_matrix)
+    #     x0 = self.dilution
+    #     E = self.energy_matrix
+    #     for i in range(E.shape[0]):
+    #         for j in range(E.shape[1]):
+    #             M[i, j] = E[i, j]  - ( x0 * E[i, i] + (1-x0) * E[j, j] )
+    #     return M
+    
     def get_Mij(self):
-        pass
+        '''
+        Calculate the Mij matrix based on the energy matrix and dilution parameter.
+            M_ij = E_ij - ( x0 * E_ii + (1-x0) * E_jj )
+        '''
+        E = self.energy_matrix
+        x0 = self.dilution
+        d = np.diag(E)  # Extract the diagonal elements (E_ii)
+        
+        M = E - ( x0 * d[:, np.newaxis] + (1 - x0) * d[np.newaxis, :] )
+        return M
+    
+    def get_enthalpy_of_mixing(self, x: np.ndarray) -> np.ndarray:
+        '''
+        Calculate the enthalpy of mixing for a subregular mixing model based on the Mij matrix and composition x.
+            H_{mix} = (M[0,1] * x + M[1,0] * (1-x)) * x * (1-x)
+        '''
+        M = self.get_Mij()
+        h = (M[0,1] * x + M[1,0] * (1-x)) * x * (1-x)
+        return h
+
 
 # To calculate the enthalpy of mixing based on DSI model for multi-component systems.
 class MultiComponentAlloy:
