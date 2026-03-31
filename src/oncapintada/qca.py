@@ -54,8 +54,16 @@ class QCABinary:
         if self.enthalpy_df.isnull().values.any():
             raise ValueError("Enthalpy data contains NaN values.")
         
+        self.omega = None
+        self.gamma = None
+        self.probability = None
+        self.warren_cowley_parameters = None
+        self.enthalpy_of_mixing = None
+        self.entropy_of_mixing = None
+        self.gibbs_free_energy_of_mixing = None
         
-    def omega(self) -> pd.DataFrame:
+        
+    def get_omega(self) -> pd.DataFrame:
         '''
         Calculate the interaction parameter ⍵(x,t) from the enthalpy of mixing data.
         '''
@@ -73,10 +81,12 @@ class QCABinary:
                 omega[ix, iT] = h[ix, iT] / (x[ix] * (1 - x[ix]))
 
         omega_df = pd.DataFrame(omega, index=x, columns=t)
+
+        self.omega = omega_df
         return omega_df
 
 
-    def gamma(self) -> pd.DataFrame:
+    def get_gamma(self) -> pd.DataFrame:
         ''''
         Calculate the parameter γ(x,t) using the QCA.
         '''
@@ -85,7 +95,9 @@ class QCABinary:
 
         x = self.x_values
         t = self.t_values
-        omega = self.omega().values
+        if self.omega is None:
+            self.get_omega()
+        omega = self.omega.values
         
         gamma = np.zeros((len(x), len(t)))
         for ix in range(len(x)):
@@ -93,16 +105,19 @@ class QCABinary:
                 gamma[ix, iT] = np.exp(-2*omega[ix, iT]/(z*R*t[iT]))
 
         gamma_df = pd.DataFrame(gamma, index=x, columns=t)
+        self.gamma = gamma_df
         return gamma_df
 
 
-    def probability(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def get_probability(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         ''''
         Calculate the probabilities of finding AB, AA, and BB pairs in the alloy using the QCA.
         '''
         x = self.x_values
         t = self.t_values
-        g = self.gamma().values
+        if self.gamma is None:
+            self.get_gamma()
+        g = self.gamma.values
 
         p_ab = np.zeros((len(x), len(t)))
         p_aa = np.zeros((len(x), len(t)))
@@ -118,18 +133,21 @@ class QCABinary:
         p_ab_df = pd.DataFrame(p_ab, index=x, columns=t)
         p_aa_df = pd.DataFrame(p_aa, index=x, columns=t)
         p_bb_df = pd.DataFrame(p_bb, index=x, columns=t)
+        self.probability = (p_ab_df, p_aa_df, p_bb_df)
         return p_ab_df, p_aa_df, p_bb_df
     
 
-    def warren_cowley_parameters(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def get_warren_cowley_parameters(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         '''
         Calculate the Warren-Cowley short-range order parameters for AB, AA, and BB pairs.
         '''
         x = self.x_values
         t = self.t_values
-        p_ab = self.probability()[0].values
-        p_aa = self.probability()[1].values
-        p_bb = self.probability()[2].values
+        if self.probability is None:
+            self.get_probability()
+        p_ab = self.probability[0].values
+        p_aa = self.probability[1].values
+        p_bb = self.probability[2].values
 
         alpha_ab = np.zeros((len(x), len(t)))
         alpha_aa = np.zeros((len(x), len(t)))
@@ -144,6 +162,8 @@ class QCABinary:
         alpha_ab_df = pd.DataFrame(alpha_ab, index=x, columns=t)
         alpha_aa_df = pd.DataFrame(alpha_aa, index=x, columns=t)
         alpha_bb_df = pd.DataFrame(alpha_bb, index=x, columns=t)
+
+        self.warren_cowley_parameters = (alpha_ab_df, alpha_aa_df, alpha_bb_df)
         return alpha_ab_df, alpha_aa_df, alpha_bb_df
 
 
@@ -153,14 +173,15 @@ class QCABinary:
         '''
         x = self.x_values
         t = self.t_values
-        omega = self.omega().values
-        p_ab = self.probability()[0].values
+        omega = self.omega.values
+        p_ab = self.probability[0].values
         h_qca = np.zeros((len(x), len(t)))
         for ix in range(len(x)):
             for iT in range(len(t)):
                 h_qca[ix, iT] = omega[ix, iT] * p_ab[ix, iT] / 2
 
         h_qca_df = pd.DataFrame(h_qca, index=x, columns=t)
+        self.enthalpy_of_mixing = h_qca_df
         return h_qca_df
 
 
@@ -174,10 +195,11 @@ class QCABinary:
         z = self.coordination_number
         x = self.x_values
         t = self.t_values
-
-        p_ab = self.probability()[0].values
-        p_aa = self.probability()[1].values
-        p_bb = self.probability()[2].values
+        if self.probability is None:
+            self.get_probability()
+        p_ab = self.probability[0].values
+        p_aa = self.probability[1].values
+        p_bb = self.probability[2].values
 
         S_BP = np.zeros((len(x), len(t)))
         S_corr = np.zeros((len(x), len(t)))
@@ -190,6 +212,7 @@ class QCABinary:
 
         S_qca = S_BP + S_corr
         S_qca_df = pd.DataFrame(S_qca, index=x, columns=t)
+        self.entropy_of_mixing = S_qca_df
         return S_qca_df
 
 
@@ -199,8 +222,14 @@ class QCABinary:
         '''
         x = self.x_values
         t = self.t_values
-        h_qca = self.get_enthalpy_of_mixing().values
-        s_qca = self.get_entropy_of_mixing().values
+        
+        if self.enthalpy_of_mixing is None:
+            self.get_enthalpy_of_mixing()
+        if self.entropy_of_mixing is None:
+            self.get_entropy_of_mixing()
+        
+        h_qca = self.enthalpy_of_mixing.values
+        s_qca = self.entropy_of_mixing.values
 
         g_qca = np.zeros((len(x), len(t)))
         for ix in range(len(x)):
@@ -208,4 +237,5 @@ class QCABinary:
                 g_qca[ix, iT] = h_qca[ix, iT] - t[iT] * s_qca[ix, iT]
 
         g_qca_df = pd.DataFrame(g_qca, index=x, columns=t)
+        self.gibbs_free_energy_of_mixing = g_qca_df
         return g_qca_df

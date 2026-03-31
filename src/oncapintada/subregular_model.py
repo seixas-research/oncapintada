@@ -25,13 +25,10 @@
 # SOFTWARE.
 
 import numpy as np
-# import pandas as pd
-# from ase import Atoms
 from typing import Optional
 from itertools import combinations_with_replacement
+from .constants import kJmol, R
 
-kJ = 96.485364               # Conversion factor from eV/atom to kJ/mol (1 eV/atom = 96.485364 kJ/mol)
-R = 8.31446261815324 / 1000  # Universal gas constant in kJ/(mol*K)
 
 class BinaryAlloy:
     '''
@@ -78,10 +75,10 @@ class BinaryAlloy:
             raise ValueError("Invalid unit. Supported units are 'eV/atom' and 'kJ/mol'.")
         
         M = self.get_Mij()
-        h = (M[0,1] * x + M[1,0] * (1-x)) * x * (1-x) * kJ  # Convert eV/atom to kJ/mol
+        h = (M[0,1] * x + M[1,0] * (1-x)) * x * (1-x) * kJmol  # Convert eV/atom to kJ/mol
 
         if unit == "eV/atom":
-            h /= kJ  # Convert kJ/mol back to eV/atom
+            h /= kJmol  # Convert kJ/mol back to eV/atom
         return h
     
     def get_configurational_entropy(self, x: np.ndarray, unit: str="kJ/(mol*K)") -> np.ndarray:
@@ -98,7 +95,7 @@ class BinaryAlloy:
         s_config = -R * (x * np.log(x) + (1-x) * np.log(1-x))
 
         if unit == "eV/(atom*K)":
-            s_config /= kJ          # Convert kJ/(mol*K) to eV/(atom*K)
+            s_config /= kJmol          # Convert kJ/(mol*K) to eV/(atom*K)
         return s_config
     
     def get_gibbs_free_energy_of_mixing(self, x: np.ndarray, t: np.ndarray, unit: str="kJ/mol", unit_s: str="kJ/(mol*K)") -> np.ndarray:
@@ -129,7 +126,7 @@ class BinaryAlloy:
         gibbs_free_energy = enthalpy_matrix - t[np.newaxis, :] * entropy_matrix
 
         if unit == "eV/atom":
-            gibbs_free_energy /= kJ  # Convert kJ/mol to eV/atom
+            gibbs_free_energy /= kJmol  # Convert kJ/mol to eV/atom
         return gibbs_free_energy
 
 

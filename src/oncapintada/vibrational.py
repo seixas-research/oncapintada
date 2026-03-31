@@ -26,12 +26,7 @@
 
 import numpy as np
 import pandas as pd
-
-kB = 8.617333262145e-5                 # Boltzmann constant in eV/K
-R = 8.314462618 / 1000                 # Gas constant in kJ/(mol*K)
-h = 4.135667696e-3                     # eV/THz
-cm_to_THz = 0.0299792458               # 1/cm to THz
-eV_to_THz = 1 / h                      # eV to THz
+from .constants import R, h, cm_to_THz, eV_to_THz, kB, kJmol
 
 
 class Vibrational:
@@ -84,7 +79,7 @@ class Vibrational:
         x = x[mask]
 
         enthalpy = 0.5 * h * np.trapz(g_nu * nu, nu) + h * np.trapz(g_nu * nu / (np.exp(x) - 1), nu)
-        enthalpy *= 96.485364     # convert eV to kJ/mol
+        enthalpy *= kJmol     # convert eV to kJ/mol
         self.vibrational_enthalpy = enthalpy
         return enthalpy
     
@@ -112,7 +107,7 @@ class Vibrational:
         g_nu = g_nu[mask]
         x = x[mask]
 
-        entropy = R * np.trapz(g_nu * (x / (np.exp(x) - 1) - np.log(1 - np.exp(-x))), nu)
+        entropy = R * np.trapz(g_nu * (x / (np.exp(x) - 1) - np.log(1 - np.exp(-x))), nu) # in kJ/(mol*K)
         
         self.vibrational_entropy = entropy
         return entropy
