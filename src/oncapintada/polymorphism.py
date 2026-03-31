@@ -28,12 +28,11 @@ import numpy as np
 import pandas as pd
 
 class Polymorph:
-    ''''
+    '''
     Class to represent a polymorph of a material, which can be used to model phase transitions and polymorphic transformations.
     '''
-    def __init__(self, phase_A: pd.DataFrame, phase_B: pd.DataFrame, energy_transition: pd.DataFrame):
-        self.phase_A = phase_A
-        self.phase_B = phase_B
-        self.energy_transition = energy_transition
-
+    def __init__(self, x: np.ndarray, phase_alpha: pd.DataFrame, phase_beta: pd.DataFrame):
+        self.x = x
+        self.phase_alpha = phase_alpha
+        self.phase_beta = phase_beta
 
