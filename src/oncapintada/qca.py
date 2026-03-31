@@ -37,7 +37,7 @@ class QCABinary:
         The coordination number of the alloy (number of nearest neighbors).
     enthalpy_df : pd.DataFrame
         A DataFrame containing the enthalpy of mixing values for different compositions and temperatures.
-        The index of the DataFrame should be the composition (x) and the columns should be the temperatures (T).
+        The index of the DataFrame should be the composition (x) and the columns should be the temperatures (t).
     '''
     def __init__(self, coordination_number: int = 0, enthalpy_df: Optional[pd.DataFrame] = None):
         if enthalpy_df is None:
@@ -47,7 +47,7 @@ class QCABinary:
         self.x_values = self.enthalpy_df.index.values
         self.t_values = self.enthalpy_df.columns.values
 
-        if self.coordination_number <= 0:
+        if coordination_number <= 0:
             raise ValueError("Coordination number must be a positive integer.")
         self.coordination_number = coordination_number
         
@@ -60,22 +60,23 @@ class QCABinary:
         Calculate the interaction parameter ⍵(x,t) from the enthalpy of mixing data.
         '''
         x = self.x_values
-        T = self.t_values
+        t = self.t_values
         h = self.enthalpy_df.values
 
         # shift x=0 and x=1 to avoid division by zero in omega calculation
-        x = np.clip(x, 1e-6, 1 - 1e-6)
+        eps = 1e-8
+        x = np.clip(x, eps, 1 - eps)
 
-        # enthalpy_df is a matrix of shape (len(x), len(T)) containing the enthalpy of mixing values for each composition and temperature.
-        for iT in range(len(T)):
+        # enthalpy_df is a matrix of shape (len(x), len(t)) containing the enthalpy of mixing values for each composition and temperature.
+        for iT in range(len(t)):
             omega = h[:, iT] / (x * (1 - x))
             if np.any(np.isnan(omega)):
-                raise ValueError(f"NaN values found in omega calculation for T={T[iT]} K. Check enthalpy data and composition range.")
+                raise ValueError(f"NaN values found in omega calculation for t={t[iT]} K. Check enthalpy data and composition range.")
             if np.any(np.isinf(omega)):
-                raise ValueError(f"Inf values found in omega calculation for T={T[iT]} K. Check enthalpy data and composition range.")
+                raise ValueError(f"Inf values found in omega calculation for t={t[iT]} K. Check enthalpy data and composition range.")
         
         # omega = h / (x * (1 - x))[:, np.newaxis]
-        omega_df = pd.DataFrame(omega, index=x, columns=T)
+        omega_df = pd.DataFrame(omega, index=x, columns=t)
         return omega_df
 
 
@@ -85,10 +86,10 @@ class QCABinary:
         '''
         z = self.coordination_number
         R = 8.314 / 1000    # kJ/(mol*K)
-        T = self.t_values
+        t = self.t_values
         omega = self.omega().values
         
-        gamma = np.exp(-2*omega/(z*R*T))
+        gamma = np.exp(-2*omega/(z*R*t))
         gamma_df = pd.DataFrame(gamma, index=self.x_values, columns=self.t_values)
         return gamma_df
 
@@ -111,7 +112,7 @@ class QCABinary:
         return p_ab_df, p_aa_df, p_bb_df
     
 
-    def warren_cowley_parameter(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def warren_cowley_parameters(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         '''
         Calculate the Warren-Cowley short-range order parameters for AB, AA, and BB pairs.
         '''

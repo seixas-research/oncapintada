@@ -25,8 +25,8 @@
 # SOFTWARE.
 
 import numpy as np
-import pandas as pd
-from ase import Atoms
+# import pandas as pd
+# from ase import Atoms
 from typing import Optional
 from itertools import combinations_with_replacement
 
@@ -101,7 +101,7 @@ class BinaryAlloy:
             s_config /= kJ          # Convert kJ/(mol*K) to eV/(atom*K)
         return s_config
     
-    def get_gibbs_free_energy(self, x: np.ndarray, t: np.ndarray, unit: str="kJ/mol", unit_s: str="kJ/(mol*K)") -> np.ndarray:
+    def get_gibbs_free_energy_of_mixing(self, x: np.ndarray, t: np.ndarray, unit: str="kJ/mol", unit_s: str="kJ/(mol*K)") -> np.ndarray:
         '''
         Calculate the Gibbs free energy of mixing for a binary alloy based on the enthalpy and configurational entropy.
             G_{mix} = H_{mix} - T * S_{config}
@@ -111,7 +111,7 @@ class BinaryAlloy:
         x (np.ndarray): An array of shape (N,) representing the composition of the alloy, where N is the number of components. The elements of x should sum to 1.
         t (np.ndarray): An array of shape (M,) representing the temperatures at which to calculate the Gibbs free energy.
         unit (str): The unit for the output Gibbs free energy. Supported units are 'eV/atom' and 'kJ/mol'. Default is 'kJ/mol'.
-
+        unit_s (str): The unit for the configurational entropy. Supported units are 'eV/(atom*K)' and 'kJ/(mol*K)'. Default is 'kJ/(mol*K)'.
         Returns:
         ---------
         np.ndarray: An array of shape (N, M) representing the Gibbs free energy of mixing for each composition and temperature. The rows correspond to compositions and the columns correspond to temperatures.
