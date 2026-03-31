@@ -100,6 +100,37 @@ class BinaryAlloy:
         if unit == "eV/(atom*K)":
             s_config /= kJ          # Convert kJ/(mol*K) to eV/(atom*K)
         return s_config
+    
+    def get_gibbs_free_energy(self, x: np.ndarray, t: np.ndarray, unit: str="kJ/mol", unit_s: str="kJ/(mol*K)") -> np.ndarray:
+        '''
+        Calculate the Gibbs free energy of mixing for a binary alloy based on the enthalpy and configurational entropy.
+            G_{mix} = H_{mix} - T * S_{config}
+
+        Parameters:
+        -----------
+        x (np.ndarray): An array of shape (N,) representing the composition of the alloy, where N is the number of components. The elements of x should sum to 1.
+        t (np.ndarray): An array of shape (M,) representing the temperatures at which to calculate the Gibbs free energy.
+        unit (str): The unit for the output Gibbs free energy. Supported units are 'eV/atom' and 'kJ/mol'. Default is 'kJ/mol'.
+
+        Returns:
+        ---------
+        np.ndarray: An array of shape (N, M) representing the Gibbs free energy of mixing for each composition and temperature. The rows correspond to compositions and the columns correspond to temperatures.
+        '''
+        if unit not in ["eV/atom", "kJ/mol"]:
+            raise ValueError("Invalid unit. Supported units are 'eV/atom' and 'kJ/mol'.")
+        
+        ntemp = len(t)
+        h_mix = self.get_enthalpy_of_mixing(x, unit=unit)
+        s_config = self.get_configurational_entropy(x, unit=unit_s)
+
+        enthalpy_matrix = np.tile(h_mix, (ntemp, 1)).T
+        entropy_matrix = np.tile(s_config, (ntemp, 1)).T
+
+        gibbs_free_energy = enthalpy_matrix - t[np.newaxis, :] * entropy_matrix
+
+        if unit == "eV/atom":
+            gibbs_free_energy /= kJ  # Convert kJ/mol to eV/atom
+        return gibbs_free_energy
 
 
 
