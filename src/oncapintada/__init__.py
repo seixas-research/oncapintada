@@ -29,7 +29,6 @@ warnings.filterwarnings("ignore")
 
 import os
 import platform
-from datetime import datetime
 from socket import gethostname
 from sys import version as __python_version__
 from sys import executable as __python_executable__
@@ -56,11 +55,41 @@ from .subregular_model import BinaryAlloy, MultiComponentAlloy
 
 
 
-__all__ = ['__version__',                                           # from _version.py
-           'BondsCounter', 'BondCountResult',                       # from bonds_counter.py
-           'BondsModel',                                            # from bonds_model.py
-           'DisorderedAlloyGenerator', 'DisorderedAlloyConfig',     # from disordered_alloy.py
-           'PhaseDiagram',                                          # from phase_diagram.py
-           'QCABinary',                                             # from qca.py
-           'BinaryAlloy', 'MultiComponentAlloy'                     # from subregular_model.py
-          ]
+def starter():
+    print("     _____                     _     _         _         ")
+    print("    |     |___ ___ ___ ___ ___|_|___| |_ ___ _| |___     ")
+    print("    |  |  |   |  _| .'|___| . | |   |  _| .'| . | .'|    ")
+    print("    |_____|_|_|___|__,|   |  _|_|_|_|_| |__,|___|__,|    ")
+    print("                          |_|                            ")
+    print("                                                         ")
+    print(f"    version: {__version__}                              ")
+    print("    developed by: Leandro Seixas             ")
+    print("    homepage: https://github.com/seixasgroup/oncapintada")
+    print("                                                  ")
+    print("--------------------------------------------------")
+    print("                                                  ")
+    print("System:")
+    print(f"├── architecture: {platform.machine()}")
+    print(f"├── platform: {platform.system()}")
+    print(f"├── user: {os.environ['USER']}")
+    print(f"├── hostname: {gethostname()}")
+    print(f"├── cwd: {os.getcwd()}")
+    print(f"└── PID: {os.getpid()}")
+    print("                                               ")
+    print("Python:")
+    print(f"├── version: {__python_version__}      ")
+    print(f"└── executable: {__python_executable__}      ")
+    print("                                               ")
+    print("Dependencies:")
+    print(f"├── ase version: {__ase_version__}    [{__ase_file__[:-11]}]")
+    print(f"├── numpy version: {__numpy_version__}    [{__numpy_file__[:-11]}]")
+    print(f"├── pandas version: {__pandas_version__}    [{__pandas_file__[:-11]}]")
+    print(f"├── pytest version: {__pytest_version__}    [{__pytest_file__[:-11]}]")
+    # print(f"├── yaml version: {__yaml_version__}    [{__yaml_file__[:-11]}]")
+    print("                                               ")
+
+
+starter()
+
+# if __name__ == "__main__":
+    # starter()
