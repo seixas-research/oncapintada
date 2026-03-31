@@ -110,3 +110,36 @@ class MultiComponentAlloy:
             point = np.bincount(combo, minlength=N)
             grid.append(point)
         return np.array(grid) / resolution
+    
+    def get_Mij(self):
+        '''
+        Calculate the Mij matrix based on the energy matrix and dilution parameter.
+            M_ij = E_ij - ( x0 * E_ii + (1-x0) * E_jj )
+        '''
+        E = self.energy_matrix
+        x0 = self.dilution
+        d = np.diag(E)            # Extract the diagonal elements (E_ii)
+        
+        M = E - ( x0 * d[:, np.newaxis] + (1 - x0) * d[np.newaxis, :] )
+        return M
+    
+    def get_enthalpy_of_mixing(self, X: np.ndarray, normalized: bool = True) -> np.ndarray:
+        '''
+        Calculate the enthalpy of mixing for a multi-component alloy based on the Mij matrix and composition X.
+            H_{mix} = sum_{j=1}^{N} sum_{i=1}^{N-1} (M[i,j] * X[j] + M[j,i] * X[i]) * X[i] * X[j]/(X[i] + X[j])
+        '''
+        M = self.get_Mij()        # Matrix of interaction parameters (M_{i[j]})
+        N = M.shape[0]            # Number of components
+        eps=1e-8                  # Small value to prevent division by zero
+        X = np.clip(X, eps, 1.0)  # Ensure that compositions are not exactly zero to avoid division by zero
+
+        h = 0.0                   # Initialize enthalpy of mixing
+        for i in range(N):
+            for j in range(i+1, N):
+                if normalized:
+                    h += (M[i,j] * X[j] + M[j,i] * X[i]) * X[i] * X[j] / (X[i] + X[j])
+                else:
+                    h += (M[i,j] * X[j] + M[j,i] * X[i]) * X[i] * X[j]
+    
+        return h
+        

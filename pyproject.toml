@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oncapintada"
-version = "26.3.10"                                         # format: # YY.MM.incremental (YY = year, MM = month)
+version = "26.4.0"                                         # format: # YY.MM.incremental (YY = year, MM = month)
 authors = [
   { name="Leandro Seixas", email="leandro.rocha@ilum.cnpem.br" },
 ]
