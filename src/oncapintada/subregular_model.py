@@ -156,7 +156,7 @@ class MultiComponentAlloy:
         self.energy_matrix = energy_matrix
 
 
-    def simplex_grid(self, N: int, resolution: int) -> np.ndarray:
+    def simplex_grid(self, N: Optional[int] = None, resolution: int = 10) -> np.ndarray:
         '''
         Generate a grid of points on the N-dimensional simplex with a given resolution. Each point represents a composition of the alloy.
         The simplex is defined as the set of points where the sum of the components is equal to 1 (i.e., x_1 + x_2 + ... + x_N = 1), and each component is non-negative (x_i >= 0 for all i).
@@ -171,6 +171,12 @@ class MultiComponentAlloy:
         np.ndarray: An array of shape (num_points, N).
         '''
         grid = []
+        if N is None:
+            if self.energy_matrix is None:
+                raise ValueError("Energy matrix must be set to determine the number of components.")
+            if self.energy_matrix.shape[0] != self.energy_matrix.shape[1]:
+                raise ValueError("Energy matrix must be square.")
+            N = self.energy_matrix.shape[0]
 
         # Generate all combinations of N components that sum to the resolution
         for combo in combinations_with_replacement(range(N), resolution):
@@ -199,8 +205,9 @@ class MultiComponentAlloy:
 
         Parameters:
         -----------
-        X (np.ndarray): An array of shape (N,) representing the composition of the alloy, where N is the number of components. The elements of X should sum to 1.
-        normalized (bool): If True, the enthalpy of mixing is normalized by the sum of the compositions (X[i] + X[j]). If False, the enthalpy of mixing is calculated without normalization.
+        X (np.ndarray): An array of shape (num_points, N) representing the compositions of the alloy, where num_points is the number of compositions and N is the number of components. Each row of X should sum to 1.
+        
+        normalized (bool): If True, the enthalpy of mixing is normalized by the sum of the compositions (X[i] + X[j]). Default is True.
 
         Returns:
         ---------
@@ -210,12 +217,17 @@ class MultiComponentAlloy:
         N = M.shape[0]            # Number of components
         eps=1e-8                  # Small value to prevent division by zero
 
-        h = 0.0                   # Initialize enthalpy of mixing
-        for i in range(N):
-            for j in range(i+1, N):
-                if normalized:
-                    h += (M[i,j] * X[j] + M[j,i] * X[i]) * X[i] * X[j] / (X[i] + X[j] + eps)  # Add small value to prevent division by zero
-                else:
-                    h += (M[i,j] * X[j] + M[j,i] * X[i]) * X[i] * X[j]
-        return h
+        h_mix = []
+        # for each X in the grid, calculate the enthalpy of mixing
+        for ix in X:
+            h = 0.0                   # Initialize enthalpy of mixing for this composition
+            for i in range(N):
+                for j in range(i+1, N):
+                    if normalized:
+                        h += (M[i,j] * ix[j] + M[j,i] * ix[i]) * ix[i] * ix[j] / (ix[i] + ix[j] + eps)  # Add small value to prevent division by zero
+                    else:
+                        h += (M[i,j] * ix[j] + M[j,i] * ix[i]) * ix[i] * ix[j]
+            h_mix.append(h)
+
+        return np.array(h_mix)
         
