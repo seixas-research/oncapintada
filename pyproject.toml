@@ -6,9 +6,9 @@ build-backend = "hatchling.build"
 name = "oncapintada"
 version = "26.4.16"                                         # format: # YY.MM.incremental (YY = year, MM = month)
 authors = [
-  { name="Leandro Seixas", email="leandro.rocha@ilum.cnpem.br" },
+  { name="Leandro Seixas Rocha", email="leandro.rocha@ilum.cnpem.br" },
 ]
-description = "Onça-pintada is a toolkit to simulate and analyze alloys from first-principles methods."
+description = "For the investigation of alloys."
 readme = "README.md"
 license = {file = "LICENSE"}                               # MIT License
 requires-python = ">=3.11"
@@ -30,4 +30,4 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/seixasgroup/oncapintada"
+"Homepage" = "https://github.com/seixas-research/oncapintada"
