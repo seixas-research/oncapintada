@@ -74,7 +74,16 @@ class BinaryAlloy:
         
         M = E - ( x0 * d[np.newaxis, :] + (1 - x0) * d[:, np.newaxis] )
         return M
-
+    
+    
+    def Mij_temp(self):
+        E = self.energy_matrix
+        x0 = self.dilution
+        d = np.diag(E)  # Extract the diagonal elements (E_ii)
+        
+        M = E - ( x0 * d[:, np.newaxis] + (1 - x0) * d[np.newaxis, :] )
+        return M
+    
 
     def enthalpy_of_mixing(self, x: np.ndarray, unit: str="kJ/mol") -> np.ndarray:
         '''

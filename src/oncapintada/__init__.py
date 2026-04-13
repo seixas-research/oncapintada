@@ -46,12 +46,13 @@ from yaml import __file__ as __yaml_file__
 from ase.parallel import parprint as print
 
 from ._version import __version__
-from .bonds_counter import BondsCounter
-from .bonds_model import BondsModel
-from .disordered_alloy import DisorderedAlloyGenerator, DisorderedAlloyConfig
-from .phase_diagram import PhaseDiagram
-from .qca import QCABinary
-from .subregular_model import BinaryAlloy, MultiComponentAlloy
+
+# from .bonds_counter import BondsCounter
+# from .bonds_model import BondsModel
+# from .disordered_alloy import DisorderedAlloyGenerator, DisorderedAlloyConfig
+# from .phase_diagram import PhaseDiagram
+# from .qca import QCABinary
+# from .subregular_model import BinaryAlloy, MultiComponentAlloy
 
 
 
@@ -63,8 +64,8 @@ def banner():
     print("                    ▌                      ")
     print("                                           ")
     print(f"    version: {__version__}                 ")
-    print("    developed by: Leandro Seixas             ")
-    print("    homepage: https://github.com/seixasgroup/oncapintada")
+    print("    developed by: Leandro Seixas Rocha       ")
+    print("    homepage: https://github.com/seixas-research/oncapintada")
     print("                                                  ")
     print("------------------------------------------------------------")
     print("                                                  ")
