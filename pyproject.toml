@@ -34,4 +34,4 @@ classifiers = [
 "Documentation" = "https://oncapintada.readthedocs.io"
 
 [tool.hatch.version]
-path = "src/carcara/_version.py"
+path = "src/oncapintada/_version.py"
