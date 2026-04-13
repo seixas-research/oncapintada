@@ -67,22 +67,16 @@ class BinaryAlloy:
         '''
         Calculate the Mij matrix based on the energy matrix and dilution parameter.
             M_ij = E_ij - ( x0 * E_ii + (1-x0) * E_jj )
-        '''
-        E = self.energy_matrix
-        x0 = self.dilution
-        d = np.diag(E)  # Extract the diagonal elements (E_ii)
         
-        M = E - ( x0 * d[np.newaxis, :] + (1 - x0) * d[:, np.newaxis] )
-        return M
-    
-    
-    def Mij_temp(self):
+        Units: eV/atom.
+        '''
         E = self.energy_matrix
         x0 = self.dilution
         d = np.diag(E)  # Extract the diagonal elements (E_ii)
         
         M = E - ( x0 * d[:, np.newaxis] + (1 - x0) * d[np.newaxis, :] )
         return M
+
     
 
     def enthalpy_of_mixing(self, x: np.ndarray, unit: str="kJ/mol") -> np.ndarray:
