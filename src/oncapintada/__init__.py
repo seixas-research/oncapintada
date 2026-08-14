@@ -52,7 +52,7 @@ from ._version import __version__
 # from .disordered_alloy import DisorderedAlloyGenerator, DisorderedAlloyConfig
 # from .phase_diagram import PhaseDiagram
 # from .qca import QCABinary
-# from .subregular_model import BinaryAlloy, MultiComponentAlloy
+from .subregular_model import BinaryAlloy, MultiComponentAlloy
 
 
 
