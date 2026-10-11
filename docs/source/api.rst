@@ -28,6 +28,12 @@ Thermodynamics
 Structure tools
 ---------------
 
+.. automodule:: oncapintada.sqs
+   :members:
+
+.. automodule:: oncapintada.monte_carlo
+   :members:
+
 .. automodule:: oncapintada.disordered_alloy
    :members:
 

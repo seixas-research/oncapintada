@@ -8,8 +8,8 @@ Onça-pintada requires Python 3.10 or later.
 python -m pip install oncapintada
 ```
 
-The Cluster Expansion builder uses NumPy and ASE from the package's normal
-runtime dependencies. It needs no ICET installation.
+The Cluster Expansion, SQS, and Monte Carlo modules use the package's normal
+runtime dependencies, including NumPy and ASE. They need no ICET installation.
 
 ## From source
 
@@ -27,8 +27,8 @@ On Windows, activate with `.venv\Scripts\activate`.
 
 ```sh
 python -m pytest
-ruff check src test examples/cluster_expansion.py
-ruff format --check src test examples/cluster_expansion.py
+ruff check src test examples/cluster_expansion.py examples/sqs.py examples/monte_carlo.py
+ruff format --check src test examples/cluster_expansion.py examples/sqs.py examples/monte_carlo.py
 sphinx-build -W --keep-going -b html docs/source docs/build/html
 python -m build
 ```

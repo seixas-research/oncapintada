@@ -80,3 +80,70 @@ Random alloy generation normalizes positive composition weights and uses exact
 largest-remainder site counts. It does not optimize SQS correlations. For
 ensembles with distinct pair and higher-order correlations, use the
 [Cluster Expansion builder](../cluster_expansion.md).
+
+## SQS supercells for random alloys
+
+```python
+from oncapintada import generate_sqs
+
+sqs_parent = bulk("Cu", "fcc", a=3.6, cubic=True)
+binary_sqs = generate_sqs(
+    sqs_parent, {"Cu": 0.5, "Au": 0.5},
+    supercell=(2, 2, 2), pair_cutoff=3.7, n_steps=10_000, seed=42,
+)
+ternary_sqs = generate_sqs(
+    sqs_parent, {"Cu": 0.5, "Au": 0.25, "Ag": 0.25},
+    supercell=(2, 2, 2), pair_cutoff=3.7, n_steps=10_000, seed=42,
+)
+binary_sqs.write("CuAu_sqs.extxyz")
+ternary_sqs.write("CuAuAg_sqs.extxyz")
+print(ternary_sqs.species_counts, ternary_sqs.objective, ternary_sqs.converged)
+print(ternary_sqs.correlation_table())
+```
+
+Both cells contain 32 sites, with counts `(16, 16)` and `(16, 8, 8)` respectively.
+The seed makes the search reproducible. SQS optimizes agreement with random
+correlations at one composition; Cluster Expansion generates representatives
+with distinct correlations for building an energy model. The [SQS guide](../sqs.md)
+explains quality checks, higher-order clusters, sublattices, and calculator use.
+
+## Calculator-backed Monte Carlo
+
+```python
+from ase.calculators.emt import EMT
+from oncapintada import MetropolisMonteCarlo
+
+mc = MetropolisMonteCarlo(
+    ternary_sqs.atoms, calculator=EMT, temperature=600,
+    move="mixed", distribution="gaussian", displacement=0.03,
+    swap_indices=ternary_sqs.active_indices, seed=42,
+)
+chain = mc.run(100)
+chain.write("mc_trajectory.extxyz")
+print(chain.energy, chain.best_energy, chain.acceptance_rate)
+```
+
+Metropolis decisions compare total energies in eV. Rejected states remain in
+the trajectory. For geometry relaxation before acceptance, set `relax=True`,
+`optimizer="BFGS"`, `fmax=0.05`, and `relax_steps=200`; this searches minimized
+energy basins. See the [Monte Carlo guide](../monte_carlo.md) for proposal rules,
+ASE integration, convergence checks, and exporting the best structure.
+
+For simulated annealing, replace the scalar temperature with a schedule:
+
+```python
+from oncapintada import TemperatureSchedule
+
+cooling = TemperatureSchedule(1200, 100, n_steps=1000, scheme="logarithmic")
+annealer = MetropolisMonteCarlo(
+    ternary_sqs.atoms, calculator=EMT, temperature=cooling,
+    move="mixed", distribution="gaussian", displacement=0.03, seed=42,
+)
+annealed = annealer.run(1000)
+annealed.to_dataframe().to_csv("annealing_steps.csv", index=False)
+```
+
+Linear and exponential cooling are also available. The schedule advances on
+every attempt and continues across repeated runs. After its specified cooling
+interval, it holds the final temperature. The Monte Carlo guide defines each
+law and shows custom `1/ln(n)` schedules.

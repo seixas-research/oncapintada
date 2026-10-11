@@ -44,8 +44,10 @@ The [Cluster Expansion page](cluster_expansion.md) describes the finite-cell
 fingerprint approximation, exploration budgets, population semantics, and
 ridge model's non-unique histogram coefficients. Treat the generated ensemble
 as structures to evaluate with a calculator, not as an automatically converged
-energy model. No calculator batch, relaxation workflow, Monte Carlo search,
-formation-energy hull plotting, LASSO, or ARD is added here.
+energy model. The CE builder does not automate calculator batches,
+formation-energy hull plotting, LASSO, or ARD. Composition-preserving simulated
+annealing is available for [SQS generation](sqs.md), and ASE calculator-backed
+Metropolis chains support energy evaluation and relaxed structure searches.
 
 `PhaseDiagram` supports binary composition curves; multicomponent lower hulls
 need a separate multidimensional implementation. Its derivatives and phase
@@ -58,10 +60,15 @@ thermal integrals. Negative modes signal that harmonic thermodynamics may not
 be appropriate for that structure. DOS normalization controls whether outputs
 are per atom or per cell; the library does not invent that normalization.
 
-The existing SQS and reverse Monte Carlo interfaces, polymorph containers,
-vibrational subregular container, and empty view/YAML/pair-distribution modules
-remain planned work. SQS and Monte Carlo algorithms are explicitly unavailable;
-use the implemented random or Cluster Expansion builders for structure generation.
+The reverse Monte Carlo interface, polymorph containers, vibrational subregular
+container, and empty view/YAML/pair-distribution modules remain planned work.
+The [Monte Carlo module](monte_carlo.md) now provides energy-based Metropolis
+chains with species swaps, whole-structure displacements, and optional
+ASE relaxation. Molecular-dynamics-assisted `MDMC` remains unavailable.
+Use random, Cluster Expansion, SQS, or Monte Carlo generation as appropriate.
+The previous `generator.py` SQS placeholders now resolve to `sqs.SQSGenerator`;
+the supported API takes an ASE parent (or filename) and `SQSOptions`, rather
+than the old unimplemented lattice-name constructor.
 
 ## Validation
 
@@ -70,8 +77,15 @@ independent brute-force binary and ternary fingerprints, known class populations
 higher-order feature normalization, finite budgets, endpoint preservation,
 exact compositions, skew and partially periodic cells, spectator preservation,
 ASE export round trips, held-out ridge fitting, limiting QCA probabilities,
-convex-envelope phase boundaries, and harmonic thermal limits. Tests also
-verify module importability and that user warnings remain visible.
+convex-envelope phase boundaries, and harmonic thermal limits. SQS tests check
+periodic cluster multiplicities, random-alloy targets, and independently
+enumerated optimum errors. Monte Carlo tests check a known two-state Boltzmann
+population, rejection residence times, both noise distributions, calculator
+failures, reproducible continuation, and ASE relaxation with analytic forces.
+Temperature-schedule checks cover known linear, exponential, and logarithmic
+temperatures, endpoint holding, zero-temperature rejection, resumed annealing,
+per-step acceptance probabilities, and exported temperature traces.
+Tests also verify module importability and that user warnings remain visible.
 
 Run the checks listed in [Installation](installation.md) before changing the
 scientific kernels. Current ASE can emit NumPy 2.5 deprecation warnings during

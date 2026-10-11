@@ -16,8 +16,19 @@ from .cluster_expansion import (
 )
 from .cluster_expansion_fit import EciFitResult, fit_effective_cluster_interactions
 from .disordered_alloy import DisorderedAlloyConfig, DisorderedAlloyGenerator
+from .monte_carlo import (
+    BasinHopping,
+    ChemicalSwapMC,
+    MCStep,
+    MetropolisMonteCarlo,
+    MonteCarloResult,
+    RelaxationError,
+    TemperatureSchedule,
+    metropolis_probability,
+)
 from .phase_diagram import PhaseDiagram
 from .qca import QCABinary
+from .sqs import SQSGenerator, SQSOptions, SQSOrbit, SQSResult, generate_sqs
 from .subregular_model import BinaryAlloy, MultiComponentAlloy
 
 __all__ = [
@@ -39,6 +50,19 @@ __all__ = [
     "generate_cluster_expansion",
     "EciFitResult",
     "fit_effective_cluster_interactions",
+    "SQSGenerator",
+    "SQSOptions",
+    "SQSOrbit",
+    "SQSResult",
+    "generate_sqs",
+    "MetropolisMonteCarlo",
+    "MonteCarloResult",
+    "MCStep",
+    "ChemicalSwapMC",
+    "BasinHopping",
+    "RelaxationError",
+    "TemperatureSchedule",
+    "metropolis_probability",
 ]
 
 

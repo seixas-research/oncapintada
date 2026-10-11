@@ -329,12 +329,11 @@ def test_lattice_plot_uses_requested_image_count_and_short_periodic_bonds():
     plt.close(axes.figure)
 
 
-def test_unimplemented_monte_carlo_fails_explicitly():
-    from oncapintada.monte_carlo import MDMC, BasinHopping, ChemicalSwapMC
+def test_unimplemented_mdmc_fails_explicitly():
+    from oncapintada.monte_carlo import MDMC
 
-    for algorithm in (BasinHopping, ChemicalSwapMC, MDMC):
-        with pytest.raises(NotImplementedError, match="not implemented"):
-            algorithm()
+    with pytest.raises(NotImplementedError, match="not implemented"):
+        MDMC()
 
 
 def test_dos_refresh_updates_units_modes_and_thermal_state(monkeypatch):

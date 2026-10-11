@@ -28,36 +28,10 @@ from typing import Optional
 
 from ase import Atoms
 
+from .sqs import SQSGenerator
 
-class SQSGenerator:
-    """Special Quasirandom Structure (SQS) generator for modeling disordered alloys.
-
-    Parameters
-    ----------
-    structure : str
-        The crystal structure of the alloy (e.g., "fcc", "bcc", "hcp").
-    size : tuple
-        The size of the supercell to generate (e.g., (2, 2, 2) for a 2x2x2 supercell).
-    composition : dict
-        A dictionary specifying the composition of the alloy (e.g., {"A": 0.5, "B": 0.5} for a 50-50 binary alloy).
-    """
-
-    def __init__(self, structure: str, size: tuple, composition: dict):
-        self.structure = structure
-        self.size = size
-        self.composition = composition
-
-    def generate(self):
-        """
-        Generate the SQS structure based on the specified parameters.
-        """
-        raise NotImplementedError("SQS generation algorithm is not implemented yet.")
-
-    def calculate_correlation_functions(self):
-        """
-        Calculate the correlation functions for the generated SQS structure.
-        """
-        raise NotImplementedError("Correlation function calculation is not implemented yet.")
+# Historical import path; the implementation lives in oncapintada.sqs.
+SQS = SQSGenerator
 
 
 # To generate structures with a given target correlation function using Monte Carlo sampling.
@@ -66,11 +40,3 @@ class ReverseMonteCarlo:
         self.atoms = atoms
         self.composition = composition
         self.target = target
-
-
-# To generate SQS structures for a given composition and lattice type.
-class SQS:
-    def __init__(self, atoms: Optional[Atoms] = None, composition=None, method="monte_carlo"):
-        self.atoms = atoms
-        self.composition = composition
-        self.method = method
