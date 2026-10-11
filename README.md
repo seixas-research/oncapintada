@@ -16,15 +16,6 @@
 
 The package also supports the evaluation of cluster interactions using the quasi-chemical approximation (QCA), allowing for the description of chemical short-range order (CSRO). Additionally, it provides tools to reconstruct atomistic geometries of alloys based on short-range order metrics, facilitating subsequent calculations of their electronic properties.
 
-The Cluster Expansion builder follows Calango Studio's native approach: it
-decorates an active sublattice, groups pair/triplet/quadruplet clusters by
-distance, and retains configurations with distinct correlation fingerprints.
-It supports exact compositions and seeded sampling for binary and
-multicomponent alloys, with pure end members preserved during unrestricted
-generation. The SQS module optimizes fixed-composition supercells against
-random-alloy correlations using simulated annealing, including periodic pair
-and optional triplet/quadruplet clusters. No ICET dependency is required.
-
 # Installation
 
 ```sh
