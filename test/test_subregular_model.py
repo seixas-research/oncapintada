@@ -1,37 +1,42 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 import numpy as np
 import pytest
-from oncapintada.subregular_model import BinaryAlloy, MultiComponentAlloy
-from oncapintada.constants import kJmol, R
 
+from oncapintada.constants import R, kJmol
+from oncapintada.subregular_model import BinaryAlloy, MultiComponentAlloy
 
 # ──────────────────────────────── Fixtures ────────────────────────────────────
+
 
 @pytest.fixture
 def simple_energy_matrix():
     return np.array([[1.0, 1.1], [2.1, 2.0]])
 
+
 @pytest.fixture
 def composition():
     return np.linspace(0, 1, 11)
+
 
 @pytest.fixture
 def simple_alloy(simple_energy_matrix):
     return BinaryAlloy(energy_matrix=simple_energy_matrix, dilution=0.10)
 
+
 @pytest.fixture
 def symmetric_energy_matrix():
     return np.array([[1.0, 1.5], [1.5, 2.0]])
 
+
 @pytest.fixture
 def ternary_energy_matrix():
-    return np.array([
-        [1.0, 1.1, 1.2],
-        [2.1, 2.0, 2.2],
-        [3.2, 3.1, 3.0],
-    ])
+    return np.array(
+        [
+            [1.0, 1.1, 1.2],
+            [2.1, 2.0, 2.2],
+            [3.2, 3.1, 3.0],
+        ]
+    )
+
 
 @pytest.fixture
 def ternary_alloy(ternary_energy_matrix):
@@ -39,6 +44,7 @@ def ternary_alloy(ternary_energy_matrix):
 
 
 # ─────────────────────────── BinaryAlloy – Init ───────────────────────────────
+
 
 class TestBinaryAlloyInit:
     def test_initialization(self, simple_energy_matrix, simple_alloy):
@@ -71,6 +77,7 @@ class TestBinaryAlloyInit:
 
 # ────────────────────────── BinaryAlloy – Properties ─────────────────────────
 
+
 class TestBinaryAlloyProperties:
     def test_get_energy_matrix(self, simple_alloy, simple_energy_matrix):
         assert np.array_equal(simple_alloy.energy_matrix, simple_energy_matrix)
@@ -98,6 +105,7 @@ class TestBinaryAlloyProperties:
 
 # ──────────────────────────── BinaryAlloy – Mij ──────────────────────────────
 
+
 class TestBinaryAlloyMij:
     def test_Mij_shape(self, simple_alloy):
         assert simple_alloy.Mij().shape == (2, 2)
@@ -118,6 +126,7 @@ class TestBinaryAlloyMij:
 
 
 # ────────────────────── BinaryAlloy – Enthalpy of Mixing ─────────────────────
+
 
 class TestBinaryAlloyEnthalpy:
     def test_enthalpy_length(self, simple_alloy, composition):
@@ -156,6 +165,7 @@ class TestBinaryAlloyEnthalpy:
 
 # ──────────────────── BinaryAlloy – Configurational Entropy ──────────────────
 
+
 class TestBinaryAlloyEntropy:
     def test_entropy_length(self, simple_alloy, composition):
         S = simple_alloy.configurational_entropy(composition)
@@ -187,6 +197,7 @@ class TestBinaryAlloyEntropy:
 
 
 # ─────────────────── BinaryAlloy – Gibbs Free Energy of Mixing ───────────────
+
 
 class TestBinaryAlloyGibbs:
     def test_gibbs_shape(self, simple_alloy, composition):
@@ -225,6 +236,7 @@ class TestBinaryAlloyGibbs:
 
 # ─────────────────── MultiComponentAlloy – Init ──────────────────────────────
 
+
 class TestMultiComponentAlloyInit:
     def test_initialization(self, ternary_energy_matrix, ternary_alloy):
         assert np.array_equal(ternary_alloy.energy_matrix, ternary_energy_matrix)
@@ -246,6 +258,7 @@ class TestMultiComponentAlloyInit:
 
 # ─────────────────── MultiComponentAlloy – Properties ────────────────────────
 
+
 class TestMultiComponentAlloyProperties:
     def test_get_energy_matrix(self, ternary_alloy, ternary_energy_matrix):
         assert np.array_equal(ternary_alloy.energy_matrix, ternary_energy_matrix)
@@ -261,6 +274,7 @@ class TestMultiComponentAlloyProperties:
 
 
 # ─────────────────── MultiComponentAlloy – simplex_grid ─────────────────────
+
 
 class TestSimplexGrid:
     def test_simplex_grid_columns_equal_components(self, ternary_alloy):
@@ -299,6 +313,7 @@ class TestSimplexGrid:
 
 # ──────────────────── MultiComponentAlloy – line_profile ────────────────────
 
+
 class TestLineProfile:
     def test_line_profile_shape(self, ternary_alloy):
         y1 = np.array([1.0, 0.0, 0.0])
@@ -321,36 +336,35 @@ class TestLineProfile:
 
     def test_line_profile_non_array_raises(self, ternary_alloy):
         with pytest.raises(ValueError, match="numpy arrays"):
-            ternary_alloy.line_profile(npoints=5,
-                                       y1=[1.0, 0.0, 0.0],
-                                       y2=np.array([0.0, 1.0, 0.0]))
+            ternary_alloy.line_profile(npoints=5, y1=[1.0, 0.0, 0.0], y2=np.array([0.0, 1.0, 0.0]))
 
     def test_line_profile_y1_not_sum_to_one_raises(self, ternary_alloy):
         with pytest.raises(ValueError, match="sum to 1"):
-            ternary_alloy.line_profile(npoints=5,
-                                       y1=np.array([0.5, 0.0, 0.0]),
-                                       y2=np.array([0.0, 1.0, 0.0]))
+            ternary_alloy.line_profile(
+                npoints=5, y1=np.array([0.5, 0.0, 0.0]), y2=np.array([0.0, 1.0, 0.0])
+            )
 
     def test_line_profile_negative_composition_raises(self, ternary_alloy):
         with pytest.raises(ValueError, match="non-negative"):
-            ternary_alloy.line_profile(npoints=5,
-                                       y1=np.array([1.2, -0.2, 0.0]),
-                                       y2=np.array([0.0, 1.0, 0.0]))
+            ternary_alloy.line_profile(
+                npoints=5, y1=np.array([1.2, -0.2, 0.0]), y2=np.array([0.0, 1.0, 0.0])
+            )
 
     def test_line_profile_npoints_less_than_2_raises(self, ternary_alloy):
         with pytest.raises(ValueError, match="at least 2"):
-            ternary_alloy.line_profile(npoints=1,
-                                       y1=np.array([1.0, 0.0, 0.0]),
-                                       y2=np.array([0.0, 1.0, 0.0]))
+            ternary_alloy.line_profile(
+                npoints=1, y1=np.array([1.0, 0.0, 0.0]), y2=np.array([0.0, 1.0, 0.0])
+            )
 
     def test_line_profile_mismatched_shapes_raises(self, ternary_alloy):
         with pytest.raises(ValueError):
-            ternary_alloy.line_profile(npoints=5,
-                                       y1=np.array([1.0, 0.0]),
-                                       y2=np.array([0.0, 1.0, 0.0]))
+            ternary_alloy.line_profile(
+                npoints=5, y1=np.array([1.0, 0.0]), y2=np.array([0.0, 1.0, 0.0])
+            )
 
 
 # ─────────────────── MultiComponentAlloy – Mij ────────────────────────────
+
 
 class TestMultiComponentAlloyMij:
     def test_Mij_shape(self, ternary_alloy):
@@ -375,6 +389,7 @@ class TestMultiComponentAlloyMij:
 
 # ─────────────────── MultiComponentAlloy – Enthalpy of Mixing ────────────────
 
+
 class TestMultiComponentAlloyEnthalpy:
     def test_enthalpy_length_matches_grid(self, ternary_alloy):
         grid = ternary_alloy.simplex_grid(resolution=5)
@@ -395,12 +410,15 @@ class TestMultiComponentAlloyEnthalpy:
         grid = ternary_alloy.simplex_grid(resolution=4)
         H = ternary_alloy.enthalpy_of_mixing(grid, unit="eV/atom")
         M = ternary_alloy.Mij()
-        eps = 1e-8
         for row, h in zip(grid, H):
             expected = 0.0
             for i in range(3):
                 for j in range(i + 1, 3):
-                    expected += (M[i, j] * row[j] + M[j, i] * row[i]) * row[i] * row[j] / (row[i] + row[j] + eps)
+                    if row[i] + row[j] == 0:
+                        continue
+                    expected += (
+                        (M[i, j] * row[j] + M[j, i] * row[i]) * row[i] * row[j] / (row[i] + row[j])
+                    )
             assert np.isclose(h, expected)
 
     def test_enthalpy_unit_conversion_kJmol_vs_eVatom(self, ternary_alloy):
@@ -431,6 +449,7 @@ class TestMultiComponentAlloyEnthalpy:
 
 
 # ─────────────────── MultiComponentAlloy – Gibbs Free Energy ─────────────────
+
 
 class TestMultiComponentAlloyGibbs:
     def test_gibbs_shape(self, ternary_alloy):

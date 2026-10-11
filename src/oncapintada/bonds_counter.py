@@ -26,7 +26,7 @@
 
 # from __future__ import annotations
 from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple, Dict, List, Union
+from typing import Dict, Iterable, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -36,6 +36,7 @@ from ase.neighborlist import neighbor_list
 
 # Defining Pair type
 Pair = Tuple[str, str]
+
 
 @dataclass
 class BondCountResult:
@@ -52,9 +53,21 @@ class BondCountResult:
         """
 
         df = pd.DataFrame(
-            [{"pair": f"{a}-{b}", "count": n, "probability": n / self.total if self.total > 0 else 0} for (a, b), n in sorted(self.counts.items())]
+            [
+                {
+                    "pair": f"{a}-{b}",
+                    "count": n,
+                    "probability": n / self.total if self.total > 0 else 0,
+                }
+                for (a, b), n in sorted(self.counts.items())
+            ],
+            columns=["pair", "count", "probability"],
         )
-        df.loc[len(df)] = {"pair": "TOTAL", "count": self.total, "probability": 1.0}
+        df.loc[len(df)] = {
+            "pair": "TOTAL",
+            "count": self.total,
+            "probability": 1.0 if self.total else 0.0,
+        }
         return df
 
 
@@ -66,16 +79,22 @@ class BondsCounter:
 
     def __init__(
         self,
-        xyz_path: Optional[str] = None,          # xyz file
-        atoms: Optional[Atoms] = None,           # Pre-loaded ASE Atoms object. If provided, xyz_path is ignored.
-        cutoff: float = 3.5,                     # Cutoff radius in angstroms (default: 3.5 Å).
-        subset_symbols: Optional[str] = None,    # Element symbols defining the subset of atoms to consider.
+        xyz_path: Optional[str] = None,  # xyz file
+        atoms: Optional[
+            Atoms
+        ] = None,  # Pre-loaded ASE Atoms object. If provided, xyz_path is ignored.
+        cutoff: float = 3.5,  # Cutoff radius in angstroms (default: 3.5 Å).
+        subset_symbols: Optional[
+            str
+        ] = None,  # Element symbols defining the subset of atoms to consider.
         subset_indices: Optional[Union[Iterable[int], np.ndarray]] = None,
     ):
         if atoms is None and xyz_path is None:
             raise ValueError("Provide `atoms` or `xyz_path`.")
         self.atoms: Atoms = atoms if atoms is not None else read(xyz_path)
-        self.cutoff: float = float(cutoff)              # Cutoff distance for bond detection
+        self.cutoff: float = float(cutoff)  # Cutoff distance for bond detection
+        if not np.isfinite(self.cutoff) or self.cutoff <= 0:
+            raise ValueError("cutoff must be finite and positive.")
         self._subset_mask: Optional[np.ndarray] = None  # Mask for subset of atoms
 
         if subset_symbols is not None:
@@ -84,13 +103,14 @@ class BondsCounter:
             self.set_subset(subset_indices)
         else:
             self.set_subset(None)
-        
+
         self.target_pairs: set[Pair] = self.get_target_pairs()
 
         # self.results: Optional[Dict] = None
 
     def set_subset(self, subset: Optional[Union[Iterable[int], np.ndarray]]) -> None:
         """Set or reset the subset mask for the current atoms selection.
+
         Parameters
         ----------
         subset : Optional[Union[Iterable[int], np.ndarray]]
@@ -98,15 +118,21 @@ class BondsCounter:
             are included; otherwise, only the atoms at the provided indices
             are marked as part of the subset.
         """
-        
+
         n = len(self.atoms)
         if subset is None:
             self._subset_mask = np.ones(n, dtype=bool)
         else:
-            idx = np.array(list(subset), dtype=int)
+            idx = np.asarray(list(subset))
+            if idx.ndim != 1 or (idx.size and not np.issubdtype(idx.dtype, np.integer)):
+                raise TypeError("Subset indices must be a 1D sequence of integers.")
+            idx = idx.astype(int)
+            if (idx < 0).any() or (idx >= n).any():
+                raise ValueError("Subset indices out of range.")
             mask = np.zeros(n, dtype=bool)
             mask[idx] = True
             self._subset_mask = mask
+        self.target_pairs = self.get_target_pairs()
 
     def set_subset_from_symbols(self, symbols: Iterable[str]) -> None:
         """
@@ -115,21 +141,14 @@ class BondsCounter:
         to those species of interest.
         """
 
-        wanted = list(set(symbols))
+        wanted = [symbols] if isinstance(symbols, str) else list(set(symbols))
         chem = np.array(self.atoms.get_chemical_symbols())
         mask = np.isin(chem, wanted)
         self._subset_mask = mask
+        self.target_pairs = self.get_target_pairs()
 
     def get_target_pairs(self) -> set[Pair]:
-        """
-        Return the set of unique element pairs present in the selected subset of atoms.
-        The method inspects the cached atomic symbols, optionally filtered by a subset mask,
-        and generates all unique unordered combinations (with replacement) of the symbols.
-        Each pair is stored as a sorted tuple to ensure deterministic ordering.
-        Returns:
-            set[Pair]: A set containing all unique element symbol pairs derived from the
-                current atoms, respecting the subset mask if defined.
-        """
+        """Return unique unordered species pairs in the selected subset."""
 
         pairs = set()
         if self._subset_mask is None:
@@ -151,40 +170,27 @@ class BondsCounter:
             Result containing a dictionary with counts for each target pair and the total number of bonds counted.
         """
 
-        chem = np.array(self.atoms.get_chemical_symbols())
-        n = len(self.atoms)
+        chem = np.asarray(self.atoms.get_chemical_symbols())
+        i_idx, j_idx, shifts = self._neighbors()
+        # Count each undirected bond once, retaining distinct periodic images.
+        # Self-image bonds have i == j; select one of S and -S lexicographically.
+        keep = (i_idx < j_idx) | np.asarray(
+            [i == j and tuple(shift) > (0, 0, 0) for i, j, shift in zip(i_idx, j_idx, shifts)],
+            dtype=bool,
+        )
+        counts = {p: 0 for p in self.get_target_pairs()}
+        for i, j in zip(i_idx[keep], j_idx[keep]):
+            counts[tuple(sorted((chem[i], chem[j])))] += 1
+        return BondCountResult(counts=counts, total=sum(counts.values()))
 
-        i_idx, j_idx = neighbor_list("ij", self.atoms, self.cutoff, self_interaction=False)
-
-        mask_subset = self._subset_mask[j_idx] & self._subset_mask[i_idx]
-        i_idx = i_idx[mask_subset]
-        j_idx = j_idx[mask_subset]
-
-        i_min = np.minimum(i_idx, j_idx)
-        j_max = np.maximum(i_idx, j_idx)
-        pairs = np.vstack((i_min, j_max)).T
-        if len(pairs) == 0:
-            counts = {p: 0 for p in self.target_pairs}
-            return BondCountResult(counts=counts, total=0)
-
-        pairs_unique = np.unique(pairs, axis=0)
-
-        counts: Dict[Pair, int] = {p: 0 for p in self.target_pairs}
-        total = 0
-
-        for i, j in pairs_unique:
-            si, sj = chem[i], chem[j]
-            key = tuple(sorted((si, sj)))
-            if key in counts:
-                counts[key] += 1
-                total += 1
-
-        return BondCountResult(counts=counts, total=total)
+    def _neighbors(self):
+        i, j, shifts = neighbor_list("ijS", self.atoms, self.cutoff, self_interaction=False)
+        selected = self._subset_mask[i] & self._subset_mask[j]
+        return i[selected], j[selected], shifts[selected]
 
     def bonds_dataframe(self) -> pd.DataFrame:
         """Return the count of bonds as a pandas DataFrame produced by `count_bonds`."""
         return self.count_bonds().to_dataframe()
-
 
     def counter_concentrations(self) -> pd.DataFrame:
         """Return the concentrations of each element in the selected subset of atoms as a pandas DataFrame."""
@@ -201,28 +207,25 @@ class BondsCounter:
         }
         df = pd.DataFrame(data)
         return df
-    
-    
-    def  warren_cowley_parameters(self) -> pd.DataFrame:
-        """Calculate and return the Warren-Cowley short-range order parameters for the bonded pairs
-        in the selected subset of atoms as a pandas DataFrame.
-        Returns:
-            pd.DataFrame: A DataFrame with columns "pair" and "warren_cowley".
-        """
 
-        bond_counts = self.count_bonds()
-        total_bonds = bond_counts.total
+    def warren_cowley_parameters(self) -> pd.DataFrame:
+        """Return α_ab = 1 - P(b | a) / c_b for selected neighbor shells.
+
+        For each lexically sorted pair a-b, a is the central species. Conditional
+        probabilities count directed neighbors, including periodic images. On
+        lattices with unequal coordination α_ab need not equal α_ba. A species
+        with no neighbors receives 1, retaining the historical no-bond convention.
+        """
         concentrations_df = self.counter_concentrations()
         concentrations = dict(zip(concentrations_df["element"], concentrations_df["concentration"]))
-
+        chem = np.asarray(self.atoms.get_chemical_symbols())
+        i, j, _ = self._neighbors()
         data = []
-        for (a, b), n_ab in sorted(bond_counts.counts.items()):
-            c_a = concentrations.get(a, 0)
-            c_b = concentrations.get(b, 0)
-            p_ab = n_ab / total_bonds if total_bonds > 0 else 0
-            expected_p_ab = 2 * c_a * c_b if a != b else c_a * c_a
-            alpha_ab = 1 - (p_ab / expected_p_ab) if expected_p_ab > 0 else 0
-            data.append({"pair": f"{a}-{b}", "warren_cowley": alpha_ab})
-
-        df = pd.DataFrame(data)
-        return df
+        for a, b in sorted(self.get_target_pairs()):
+            centers = chem[i] == a
+            total = int(centers.sum())
+            count = int(np.count_nonzero(centers & (chem[j] == b)))
+            conditional = count / total if total else 0.0
+            alpha = 1 - conditional / concentrations[b]
+            data.append({"pair": f"{a}-{b}", "warren_cowley": alpha})
+        return pd.DataFrame(data, columns=["pair", "warren_cowley"])

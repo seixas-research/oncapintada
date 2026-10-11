@@ -4,12 +4,12 @@
 # This code is part of Onça-pintada.
 # MIT License
 #
-# Copyright (c) 2026 Leandro Seixas Rocha <leandro.rocha@ilum.cnpem.br> 
+# Copyright (c) 2026 Leandro Seixas Rocha <leandro.rocha@ilum.cnpem.br>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sellv
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
@@ -24,12 +24,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
 from ase import Atoms
 from ase.io import write
+
+from ._validation import chemical_species, exact_counts, fractions, positive_integer
 
 
 class BondsModel:
@@ -53,20 +54,19 @@ class BondsModel:
         pbc=(True, True, False),
         seed=None,
     ):
-        self.nx = int(nx)
-        self.ny = int(ny)
+        self.nx = positive_integer(nx, "nx")
+        self.ny = positive_integer(ny, "ny")
         self.N = self.nx * self.ny
         self.a = float(a)
+        if not np.isfinite(self.a) or self.a <= 0:
+            raise ValueError("a must be finite and positive.")
         self.topology = topology.lower()
-        self.species = list(species)
-        self.concentrations = np.array(concentrations, dtype=float)
+        self.species = list(chemical_species(species))
+        self.concentrations = fractions(concentrations, len(self.species))
+        if len(pbc) != 3:
+            raise ValueError("pbc must contain three boolean values.")
         self.pbc = tuple(bool(x) for x in pbc)
         self.rng = np.random.default_rng(seed)
-
-        if len(self.species) != len(self.concentrations):
-            raise ValueError("species and concentrations must have the same length")
-        if not np.isclose(self.concentrations.sum(), 1.0):
-            raise ValueError("concentrations must sum to 1")
 
         # Build lattice positions
         self.positions = self._build_lattice()
@@ -82,6 +82,8 @@ class BondsModel:
 
         # Interaction matrix J_{alpha,beta} as pandas DataFrame
         self.J = self._prepare_J(J)
+        if not np.isfinite(self.J.values).all() or not np.allclose(self.J.values, self.J.values.T):
+            raise ValueError("J must be finite and symmetric.")
 
     # ------------------------------------------------------------------
     # Lattice construction
@@ -91,8 +93,7 @@ class BondsModel:
             return self._build_square_lattice()
         else:
             raise NotImplementedError(
-                f"Topology '{self.topology}' not implemented yet "
-                "(add _build_<topology>_lattice)."
+                f"Topology '{self.topology}' not implemented yet (add _build_<topology>_lattice)."
             )
 
     def _build_square_lattice(self):
@@ -108,11 +109,7 @@ class BondsModel:
     # Alloy configuration
     # ------------------------------------------------------------------
     def _generate_occupation(self):
-        counts = np.round(self.concentrations * self.N).astype(int)
-        diff = self.N - counts.sum()
-        if diff != 0:
-            idx = np.argmax(self.concentrations)
-            counts[idx] += diff
+        counts = exact_counts(self.concentrations, self.N)
 
         labels = []
         for sp, n in zip(self.species, counts):
@@ -146,27 +143,22 @@ class BondsModel:
 
         For each site i:
             neighbors[i] = [right, left, up, down]
-        where indices are wrapped by modulo (torus topology).
+        Periodic directions wrap by modulo; missing open-boundary neighbors are -1.
         """
         if self.topology != "square":
             raise NotImplementedError("Neighbor list only implemented for square lattice")
 
-        neighbors = np.empty((self.N, 4), dtype=int)
-
+        neighbors = np.full((self.N, 4), -1, dtype=int)
         for j in range(self.ny):
             for i in range(self.nx):
                 idx = self._site_index(i, j)
-
-                ip = (i + 1) % self.nx  # right
-                im = (i - 1) % self.nx  # left
-                jp = (j + 1) % self.ny  # up
-                jm = (j - 1) % self.ny  # down
-
-                neighbors[idx, 0] = self._site_index(ip, j)   # right
-                neighbors[idx, 1] = self._site_index(im, j)   # left
-                neighbors[idx, 2] = self._site_index(i, jp)   # up
-                neighbors[idx, 3] = self._site_index(i, jm)   # down
-
+                for direction, (di, dj) in enumerate(((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    ii, jj = i + di, j + dj
+                    if not self.pbc[0] and not 0 <= ii < self.nx:
+                        continue
+                    if not self.pbc[1] and not 0 <= jj < self.ny:
+                        continue
+                    neighbors[idx, direction] = self._site_index(ii % self.nx, jj % self.ny)
         return neighbors
 
     # ------------------------------------------------------------------
@@ -204,72 +196,42 @@ class BondsModel:
     # Hamiltonian / energy
     # ------------------------------------------------------------------
     def bond_energy(self):
-        """
-        Compute the total bond energy:
-            H = - sum_{<ij>} J_{sigma_i, sigma_j}
-
-        Implementation details:
-        - neighbors[i] has 4 neighbors (right, left, up, down).
-        - For i != j, each bond (i,j) appears twice in the full sum
-          (once from i, once from j). We count it only once by using i < j.
-        - For i == j (self-bond, e.g., 1x1 lattice or collapsed directions),
-          we sum every occurrence. For a 1x1 lattice, this gives 4 bonds
-          (coordination 4 at one site).
-        """
-        E = 0.0
-        for i in range(self.N):
-            s_i = self.occupation[i]
-            for j in self.neighbors[i]:
-                s_j = self.occupation[j]
-                J_ij = self.J.loc[s_i, s_j]
-
-                if i == j:
-                    # self-bond (e.g., 1x1 torus → 4 self-bonds)
-                    E -= J_ij
-                elif i < j:
-                    # count each (i,j) with i != j only once
-                    E -= J_ij
-                # if i > j: skip to avoid double counting
-
-        return E
+        """H = -Σ_<ij> J_ij, counting each periodic image bond once."""
+        return float(self.site_energies().sum())
 
     def site_energies(self):
-        """
-        Per-site energy: each bond contributes half to each endpoint.
-        Self-bonds (i == j) are fully assigned to that site.
-        """
-        e_site = np.zeros(self.N, dtype=float)
-        for i in range(self.N):
-            s_i = self.occupation[i]
-            for j in self.neighbors[i]:
-                s_j = self.occupation[j]
-                J_ij = self.J.loc[s_i, s_j]
+        """Half the directed neighbor sum, including periodic self-images.
 
-                if i == j:
-                    e_site[i] -= J_ij  # self-bond
-                elif i < j:
-                    e_site[i] -= 0.5 * J_ij
-                    e_site[j] -= 0.5 * J_ij
-        return e_site
+        A 1×1 periodic square has four directed neighbors and two bonds per
+        cell, so its energy is -2 J, consistent with any larger periodic cell.
+        Open-boundary directions carry no wrapping neighbors (marked -1).
+        """
+        energy = np.zeros(self.N)
+        for i in range(self.N):
+            for j in self.neighbors[i]:
+                if j >= 0:
+                    energy[i] -= 0.5 * self.J.loc[self.occupation[i], self.occupation[j]]
+        return energy
 
     # ------------------------------------------------------------------
     # Plotting
     # ------------------------------------------------------------------
     def plot_lattice(self, n_images=(1, 1), show_bonds=True, ax=None):
         if ax is None:
-            fig, ax = plt.subplots(figsize=(5, 5))
+            _, ax = plt.subplots(figsize=(5, 5))
 
-        nx_rep, ny_rep = n_images
-        nx_half = nx_rep // 2
-        ny_half = ny_rep // 2
+        if len(n_images) != 2:
+            raise ValueError("n_images must contain two positive integers.")
+        nx_rep, ny_rep = (positive_integer(n, "n_images") for n in n_images)
+        nx_half, ny_half = nx_rep // 2, ny_rep // 2
 
         species_unique = self.species
         cmap = plt.get_cmap("tab10")
         color_map = {sp: cmap(i % 10) for i, sp in enumerate(species_unique)}
 
         # Periodic images (for visualization only)
-        for dx in range(-nx_half, nx_half + 1):
-            for dy in range(-ny_half, ny_half + 1):
+        for dx in range(-nx_half, nx_rep - nx_half):
+            for dy in range(-ny_half, ny_rep - ny_half):
                 shift = np.array([dx * self.nx * self.a, dy * self.ny * self.a, 0.0])
                 pos_shifted = self.positions + shift
                 for sp in species_unique:
@@ -289,16 +251,23 @@ class BondsModel:
         if show_bonds:
             for i in range(self.N):
                 x1, y1, _ = self.positions[i]
-                for j in self.neighbors[i]:
-                    # to avoid drawing each bond twice, only draw when i<j or i==j
-                    if (i < j) or (i == j):
-                        x2, y2, _ = self.positions[j]
-                        ax.plot([x1, x2], [y1, y2], linestyle="-", linewidth=1, alpha=0.5)
+                # Right/up bonds count each image once and draw short segments.
+                for direction, delta in ((0, (self.a, 0)), (2, (0, self.a))):
+                    if self.neighbors[i, direction] >= 0:
+                        ax.plot(
+                            [x1, x1 + delta[0]],
+                            [y1, y1 + delta[1]],
+                            linestyle="-",
+                            linewidth=1,
+                            alpha=0.5,
+                        )
 
         ax.set_aspect("equal")
         ax.set_xlabel("x (Å)")
         ax.set_ylabel("y (Å)")
-        ax.set_title(f"{self.topology.capitalize()} lattice ({self.nx}x{self.ny}) with PBC")
+        ax.set_title(
+            f"{self.topology.capitalize()} lattice ({self.nx}x{self.ny}), PBC={self.pbc[:2]}"
+        )
         ax.legend()
         plt.tight_layout()
         return ax
@@ -312,15 +281,16 @@ class BondsModel:
 
 # Example usage
 if __name__ == "__main__":
-
     J_binary = {("Au", "Au"): 1.0, ("Pt", "Pt"): 0.5, ("Au", "Pt"): 0.8}
-    model_3x3 = BondsModel(5,5, species=["Au", "Pt"], concentrations=[0.3, 0.7], J=J_binary, seed=42)
+    model_3x3 = BondsModel(
+        5, 5, species=["Au", "Pt"], concentrations=[0.3, 0.7], J=J_binary, seed=42
+    )
 
-    for i in range(model_3x3.N): 
+    for i in range(model_3x3.N):
         print(f"Site {i} has {len(model_3x3.neighbors[i])} neighbors")
     E = model_3x3.bond_energy()
     print(f"Total bond energy: {E} eV")
 
-    model_3x3.plot_lattice(n_images=(1,1), show_bonds=True)
+    model_3x3.plot_lattice(n_images=(1, 1), show_bonds=True)
     plt.show()
     # model_3x3.export("lattice.xyz")

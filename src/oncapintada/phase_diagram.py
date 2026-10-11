@@ -27,6 +27,9 @@
 import numpy as np
 import pandas as pd
 
+from ._validation import positive_integer
+
+
 class PhaseDiagram:
     """
     Class to work with tabulated Gibbs free energy G(x,t) stored in a pandas DataFrame, and calculate spinodal and binodal curves.
@@ -58,13 +61,13 @@ class PhaseDiagram:
             Values of temperatures corresponding to the columns.
             If None, attempts to convert the column labels to float.
         """
-        
+
         if not isinstance(gibbs_df, pd.DataFrame):
             raise ValueError("gibbs_df must be a pandas DataFrame.")
-        
+
         if gibbs_df.empty:
             raise ValueError("gibbs_df cannot be empty.")
-        
+
         # Ensure numeric values
         self.gibbs = gibbs_df.astype(float).copy()
 
@@ -91,7 +94,19 @@ class PhaseDiagram:
                     "t_values must have the same length as the number of columns in gibbs_df."
                 )
             self.gibbs.columns = self.t
+        self._validate_axes()
 
+    def _validate_axes(self):
+        if self.x.ndim != 1 or len(self.x) < 3:
+            raise ValueError("At least three compositions are required.")
+        if not np.isfinite(self.x).all() or np.any(np.diff(self.x) <= 0):
+            raise ValueError("Compositions must be finite and strictly increasing.")
+        if np.any((self.x < 0) | (self.x > 1)):
+            raise ValueError("Compositions must lie in [0, 1].")
+        if self.t.ndim != 1 or not np.isfinite(self.t).all() or np.any(self.t < 0):
+            raise ValueError("Temperatures must be finite and non-negative.")
+        if not np.isfinite(self.gibbs.values).all():
+            raise ValueError("Gibbs energies must be finite.")
 
     # ------------------------------------------------------------------
     # First derivative ∂G/∂x
@@ -140,193 +155,85 @@ class PhaseDiagram:
     # Spinodal curve
     # ------------------------------------------------------------------
     def spinodal_curve(self, atol: float = 1e-8) -> pd.DataFrame:
+        """Return curvature zeros and sign changes, interpolated on the grid.
+
+        All branches are retained. An entirely flat curvature column carries
+        no identifiable spinodal boundary and contributes no points.
         """
-        Find, for each t, the composition(s) x where the second derivative ∂²G/∂x²
-        changes sign (spinodal boundaries).
-
-        Algorithm
-        ---------
-        - Compute ∂²G/∂x² on the (x, t) grid.
-        - For each row (fixed t):
-            * Scan adjacent points in x: (x_j, x_{j+1}).
-            * Look for sign changes in d2Gdx2(t, x_j) and d2Gdx2(t, x_{j+1}),
-              i.e., y1 * y2 < 0.
-            * Approximate the zero by linear interpolation between x_j and x_{j+1}.
-            * Also treat values with |y| < atol as "numerical zeros"
-              and include their corresponding x.
-        - For each t, keep up to two distinct x values (x1, x2), sorted.
-
-        Parameters
-        ----------
-        atol : float, optional
-            Absolute tolerance to treat small values of ∂²G/∂x² as zero.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns "x" and "t", containing the spinodal points (x, t).
-        """
-        d2_df = self.d2Gdx2()
-        d2 = d2_df.values  # shape: (nX, nT)
-        x = self.x
-        t = self.t
-        nX, nT = d2.shape
-
-        spinodal_points = []
-
-        for iT in range(nT):
-            row = d2[:, iT]
-            xs_found = []
-
-            for j in range(nX - 1):
-                y1 = row[j]
-                y2 = row[j + 1]
-
-                if np.isnan(y1) or np.isnan(y2):
-                    continue
-
-                # Treat near-zero values as zeros
-                if abs(y1) < atol:
-                    xs_found.append(x[j])
-                if abs(y2) < atol:
-                    xs_found.append(x[j + 1])
-
-                # Check sign change (excluding exact/near zeros already handled)
-                if y1 * y2 < 0.0:
-                    # Linear interpolation for zero crossing between x[j] and x[j+1]
-                    # y(x) = y1 + (y2 - y1)*t, y(x_zero) = 0 => t = -y1 / (y2 - y1)
-                    t = -y1 / (y2 - y1)
-                    x_zero = x[j] + t * (x[j + 1] - x[j])
-                    xs_found.append(x_zero)
-
-            # Remove approximate duplicates and sort
-            xs_unique = []
-            for xv in xs_found:
-                if not any(np.isclose(xv, y, atol=1e-10) for y in xs_unique):
-                    xs_unique.append(xv)
-            xs_unique = sorted(xs_unique)
-
-            if len(xs_unique) >= 1:
-                x1 = xs_unique[0]
-            else:
-                x1 = np.nan
-
-            if len(xs_unique) >= 2:
-                x2 = xs_unique[1]
-            else:
-                x2 = np.nan
-
-            spinodal_points.append((x1, x2))
-
-        spinodal_join = []
-        for iT, (x1, x2) in enumerate(spinodal_points):
-            if not np.isnan(x1):
-                spinodal_join.append((x1, self.t[iT]))
-            if not np.isnan(x2):
-                spinodal_join.append((x2, self.t[iT]))
-
-        spinodal_join_df = pd.DataFrame(spinodal_join, columns=["x", "t"], dtype=np.float64)
-        spinodal_join_df.sort_values(by='x', inplace=True)
-        spinodal_join_df.reset_index(drop=True, inplace=True)
-        return spinodal_join_df
-
+        if not np.isfinite(atol) or atol < 0:
+            raise ValueError("atol must be finite and non-negative.")
+        points = []
+        for temperature, curvature in zip(self.t, self.d2Gdx2().values.T):
+            zero = np.isclose(curvature, 0, atol=atol, rtol=0)
+            if zero.all():
+                continue
+            roots = list(self.x[zero])
+            for j in range(len(self.x) - 1):
+                y1, y2 = curvature[j : j + 2]
+                if not zero[j] and not zero[j + 1] and np.signbit(y1) != np.signbit(y2):
+                    roots.append(self.x[j] - y1 * (self.x[j + 1] - self.x[j]) / (y2 - y1))
+            unique = []
+            for root in sorted(roots):
+                if not unique or not np.isclose(root, unique[-1], rtol=0, atol=1e-10):
+                    unique.append(root)
+            points.extend((root, temperature) for root in unique)
+        return pd.DataFrame(points, columns=["x", "t"], dtype=float).sort_values(
+            by="x", ignore_index=True
+        )
 
     # ------------------------------------------------------------------
     # Binodal curve
     # ------------------------------------------------------------------
     def binodal_curve(self, atol: float = 1e-8, ninterp: int = 10) -> pd.DataFrame:
+        """Coexistence endpoints from the discrete lower convex envelope.
+
+        Tie-lines that skip sampled compositions delimit miscibility gaps.
+        All grid values are checked, so a narrow instability cannot hide
+        between interpolation probes. Multiple gaps per temperature are
+        returned. Accuracy is limited by the supplied composition grid.
+        ``ninterp`` is retained for call compatibility; it is no longer used.
         """
-        Compute the binodal curve (coexistence curve) from G(x, t) using the common tangent construction.
+        positive_integer(ninterp, "ninterp")
+        if not np.isfinite(atol) or atol < 0:
+            raise ValueError("atol must be finite and non-negative.")
+        points = []
+        for temperature, values in zip(self.t, self.gibbs.values.T):
+            hull = []
+            for index in range(len(self.x)):
+                while len(hull) >= 2:
+                    a, b = hull[-2:]
+                    left = (values[b] - values[a]) / (self.x[b] - self.x[a])
+                    right = (values[index] - values[b]) / (self.x[index] - self.x[b])
+                    if left <= right:
+                        break
+                    hull.pop()
+                hull.append(index)
+            for a, b in zip(hull, hull[1:]):
+                if b <= a + 1:
+                    continue
+                interior = slice(a + 1, b)
+                line = values[a] + (values[b] - values[a]) * (
+                    (self.x[interior] - self.x[a]) / (self.x[b] - self.x[a])
+                )
+                if np.max(values[interior] - line) > atol:
+                    points.extend(((self.x[a], temperature), (self.x[b], temperature)))
+        return pd.DataFrame(points, columns=["x", "t"], dtype=float).sort_values(
+            by="x", ignore_index=True
+        )
 
-        Algorithm
-        ---------
-        - For each t, scan pairs of compositions (x_i, x_j) with i < j.
-        - Check if the line connecting (x_i, G_i) and (x_j, G_j) is a common tangent:
-        * Slope m = (G_j - G_i) / (x_j - x_i)
-        * Check if m is less than or equal to the local slope at x_i: m <= dGdx(t, x_i)
-        * Check if m is greater than or equal to the local slope at x_j: m >= dGdx(t, x_j)
-        * Also check if the line is below G(x) for all x in between (convexity condition).
-        - Keep track of the pair (x_i, x_j) that satisfies these conditions and has the largest gap (x_j - x_i).
-        - Return the pairs (x_i, x_j) for each t as the binodal points.
-
-        Parameters
-        ----------
-        atol : float, optional
-            Absolute tolerance for numerical comparisons. Default is 1e-8.
-        ninterp : int, optional
-            Number of points for checking the convexity condition. Default is 10.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns "x" and "t", containing the binodal points (x, t).
-            Each t may have up to two x values corresponding to the two sides of the coexistence curve.
-        """
-
-        G = self.gibbs.values  # shape: (nX, nT)
-        x = self.x             # shape: (nX,)
-        t = self.t             # shape: (nT,)
-        dGdx_df = self.dGdx()  # shape: (nX, nT)
-        dGdx = dGdx_df.values  # shape: (nX, nT)
-
-        nX, nT = G.shape
-        binodal_points = []
-
-        for iT in range(nT):
-            best_pair = (np.nan, np.nan)
-            best_gap = -np.inf
-
-            for i in range(nX):
-                for j in range(i + 1, nX):
-                    x_i, x_j = x[i], x[j]
-                    G_i, G_j = G[i, iT], G[j, iT]
-                    m = (G_j - G_i) / (x_j - x_i)
-
-                    if m <= dGdx[i, iT] + atol and m >= dGdx[j, iT] - atol:
-                        # Check convexity condition: line must be below G(x) for all x in (x_i, x_j)
-                        x_mid = np.linspace(x_i, x_j, ninterp)  # ninterp points between x_i and x_j
-                        G_mid_line = G_i + m * (x_mid - x_i)
-                        G_mid_actual = np.interp(x_mid, x, G[:, iT])
-
-                        if np.all(G_mid_line <= G_mid_actual + atol):
-                            gap = x_j - x_i
-                            if gap > best_gap:
-                                best_gap = gap
-                                best_pair = (x_i, x_j)
-
-            binodal_points.append(best_pair)
-
-        # concatenate (T,x1) and (T, x2) in a single (T, x) DataFrame
-        binodal_join = []
-        for iT, (x1, x2) in enumerate(binodal_points):
-            if not np.isnan(x1):
-                binodal_join.append((x1, t[iT]))
-            if not np.isnan(x2):
-                binodal_join.append((x2, t[iT]))
-
-
-        binodal_join_df = pd.DataFrame(binodal_join, columns=["x", "t"], dtype=np.float64)
-        binodal_join_df.sort_values(by='x', inplace=True)
-        binodal_join_df.reset_index(drop=True, inplace=True)
-
-        return binodal_join_df
-    
     # ------------------------------------------------------------------
     # Critical points
     # ------------------------------------------------------------------
-    def critical_point(self, atol: float = 1e-8, curve: str ="spinodal") -> pd.DataFrame:
+    def critical_point(self, atol: float = 1e-8, curve: str = "spinodal") -> dict:
+        """Highest-temperature boundary on the tabulated grid.
+
+        Return NaNs when no boundary exists. This is a grid estimate, not an
+        extrapolation to an unsampled thermodynamic critical temperature.
         """
-        Show the critical points (x_c, t_c) where the spinodal or binodal curve reaches its maximum values.
-        """
-        if curve == "spinodal":
-            spinodal_df = self.spinodal_curve(atol=atol)
-            max_spinodal = spinodal_df.loc[spinodal_df['t'].idxmax()]
-            x_c, t_c = max_spinodal['x'], max_spinodal['t']
-            return {"x_c": x_c, "t_c": t_c}
-        elif curve == "binodal":
-            binodal_df = self.binodal_curve(atol=atol)
-            max_binodal = binodal_df.loc[binodal_df['t'].idxmax()]
-            x_c, t_c = max_binodal['x'], max_binodal['t']
-            return {"x_c": x_c, "t_c": t_c}
-        else:
+        if curve not in ("spinodal", "binodal"):
             raise ValueError("curve must be 'spinodal' or 'binodal'.")
+        boundary = getattr(self, f"{curve}_curve")(atol=atol)
+        if boundary.empty:
+            return {"x_c": np.nan, "t_c": np.nan}
+        highest = boundary[boundary["t"] == boundary["t"].max()]
+        return {"x_c": float(highest["x"].mean()), "t_c": float(highest["t"].iloc[0])}

@@ -1,7 +1,1 @@
-# import os
-
-# LOGFILES = ['test.log']
-
-# def pytest_sessionfinish(session, exitstatus):
-#     print("\n\n FINISHING TESTS.")
-
+"""Test imports are configured by pythonpath in pyproject.toml."""

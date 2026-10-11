@@ -24,59 +24,62 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
-from .constants import R, h, cm_to_THz, eV_to_THz, kB, kJmol, cmrec
 from ase import Atoms
-from ase.phonons import Phonons
-from ase.optimize import BFGS
 from ase.filters import UnitCellFilter
-from typing import Optional
+from ase.optimize import BFGS
+from ase.phonons import Phonons
+from scipy.integrate import trapezoid
+
+from .constants import R, cm_to_THz, eV_to_THz, h, kB, kJmol
 
 
 class Vibrational:
-    '''Class for vibrational properties of materials.'''
-    def __init__(self, vdos: Optional[pd.DataFrame] = None, frequency_unit: str = 'cm^-1'):
-        self.vdos = vdos
-        if vdos is not None:
-            self.nu = vdos['Frequency'].values            # frequency (in cm^-1, eV, or THz depending on frequency_unit)
-            self.g_nu = vdos['VDOS'].values               # vibrational density of states (in states per frequency unit)
-        else:
-            self.nu = None
-            self.g_nu = None
-        self.frequency_unit = frequency_unit
+    """Class for vibrational properties of materials."""
 
-        if frequency_unit not in ['THz', 'cm^-1', 'eV']:
+    def __init__(self, vdos: Optional[pd.DataFrame] = None, frequency_unit: str = "cm^-1"):
+        if frequency_unit not in ("THz", "cm^-1", "eV"):
             raise ValueError("frequency_unit must be either 'THz', 'cm^-1', or 'eV'")
-        
-        if frequency_unit == 'THz':
-            self.nu_THz = self.nu                     # frequency in THz
-            self.g_nu_THz = self.g_nu                 # VDOS in states/THz
-        elif frequency_unit == 'cm^-1':
-            self.nu_THz = self.nu * cm_to_THz         # convert frequency to THz
-            self.g_nu_THz = self.g_nu / cm_to_THz     # convert VDOS to states/THz
-        elif frequency_unit == 'eV':
-            self.nu_THz = self.nu * eV_to_THz         # convert frequency to THz
-            self.g_nu_THz = self.g_nu / eV_to_THz     # convert VDOS to states/THz
+        self.frequency_unit = frequency_unit
+        self.vdos = self.nu = self.g_nu = self.nu_THz = self.g_nu_THz = None
+        self.number_of_modes = None
+        self.vibrational_enthalpy = self.vibrational_entropy = self.vibrational_free_energy = None
+        if vdos is not None:
+            self._set_vdos(vdos)
 
+    def _set_vdos(self, vdos):
+        if not isinstance(vdos, pd.DataFrame) or not {"Frequency", "VDOS"}.issubset(vdos.columns):
+            raise ValueError("VDOS must be a DataFrame with Frequency and VDOS columns.")
+        data = vdos[["Frequency", "VDOS"]].astype(float).copy()
+        nu, density = data["Frequency"].to_numpy(), data["VDOS"].to_numpy()
+        if len(nu) < 2 or not np.isfinite(data.values).all() or np.any(np.diff(nu) <= 0):
+            raise ValueError("VDOS requires at least two finite, strictly increasing frequencies.")
+        if np.any(density < 0):
+            raise ValueError("VDOS density must be non-negative.")
+        self.vdos, self.nu, self.g_nu = data, nu, density
+        scale = {"THz": 1.0, "cm^-1": cm_to_THz, "eV": eV_to_THz}[self.frequency_unit]
+        self.nu_THz, self.g_nu_THz = nu * scale, density / scale
         self.number_of_modes = self.get_number_of_modes()
-        self.vibrational_enthalpy = None
-        self.vibrational_entropy = None
-        self.vibrational_free_energy = None
+        self.vibrational_enthalpy = self.vibrational_entropy = self.vibrational_free_energy = None
 
-    def get_vdos(self,
-                 atoms: Atoms,
-                 calc,
-                 supercell: tuple = (2,2,2),
-                 kpts: tuple = (100,100,1),
-                 npts: int = 3000,
-                 width: float = 5e-4,
-                 xmin: float = 1e-4,
-                 xmax: float = 0.10,
-                 delta: float = 0.01,
-                 fmax: float = 0.001) -> pd.DataFrame:
-        '''Calculate the vibrational density of states (VDOS) using ASE's Phonons class.
-        
+    def get_vdos(
+        self,
+        atoms: Atoms,
+        calc,
+        supercell: tuple = (2, 2, 2),
+        kpts: tuple = (100, 100, 1),
+        npts: int = 3000,
+        width: float = 5e-4,
+        xmin: float = 1e-4,
+        xmax: float = 0.10,
+        delta: float = 0.01,
+        fmax: float = 0.001,
+    ) -> pd.DataFrame:
+        """Calculate the vibrational density of states (VDOS) using ASE's Phonons class.
+
         Parameters
         ----------
         atoms : ASE Atoms object
@@ -97,12 +100,13 @@ class Vibrational:
             The maximum frequency for the VDOS (default is 0.10).
         delta : float, optional
             Displacement for finite difference calculations (default is 0.01).
-        
+
         Returns
         -------
         pd.DataFrame
             A DataFrame containing the frequencies and corresponding VDOS values.
-        '''
+        """
+        atoms = atoms.copy()
         atoms.calc = calc
         optim = BFGS(UnitCellFilter(atoms), logfile=None)
         optim.run(fmax=fmax)
@@ -111,124 +115,87 @@ class Vibrational:
         ph.read(acoustic=True)
         ph.clean()
         ph_dos = ph.get_dos(kpts=kpts).sample_grid(npts=npts, width=width, xmin=xmin, xmax=xmax)
-        
-        self.nu = ph_dos.get_energies() * cmrec         # frequency in cm^-1
-        self.g_nu = ph_dos.get_weights() / cmrec        # VDOS in states/cm^-1
-        
-        self.vdos = pd.DataFrame({'Frequency': self.nu, 'VDOS': self.g_nu})
-        
-        return self.vdos
 
+        # ASE samples phonon energies in eV; convert both axes together.
+        scale = {"eV": 1.0, "THz": eV_to_THz, "cm^-1": eV_to_THz / cm_to_THz}[self.frequency_unit]
+        self._set_vdos(
+            pd.DataFrame(
+                {
+                    "Frequency": ph_dos.get_energies() * scale,
+                    "VDOS": ph_dos.get_weights() / scale,
+                }
+            )
+        )
+        return self.vdos.copy()
 
     def get_number_of_modes(self) -> float:
-        '''Calculate the total number of vibrational modes.
-        
-        Returns
-        -------
-        float
-            Total number of vibrational modes.
-        '''
-        return np.trapz(self.g_nu, self.nu)
-    
+        """Integral of the supplied DOS; evaluation requires a DOS to be set."""
+        if self.vdos is None:
+            raise ValueError("VDOS is not set; supply a table or call get_vdos first.")
+        return float(trapezoid(self.g_nu, self.nu))
 
-    def get_vibrational_enthalpy(self, T: np.ndarray) -> np.ndarray:
-        '''Calculate the vibrational enthalpy at a given temperature.
-        
-        Parameters
-        ----------
-        T : np.ndarray
-            Temperature in Kelvin.
-        
-        Returns
-        -------
-        np.ndarray
-            Vibrational enthalpy in kJ/mol.
+    def _thermal_terms(self, T):
+        if self.vdos is None:
+            raise ValueError("VDOS is not set; supply a table or call get_vdos first.")
+        temperature = np.asarray(T, dtype=float)
+        if temperature.ndim > 1 or not np.isfinite(temperature).all() or np.any(temperature < 0):
+            raise ValueError("Temperature must be a finite, non-negative scalar or 1D array.")
+        was_scalar = temperature.ndim == 0
+        temperature = np.atleast_1d(temperature)
+        # Imaginary and zero modes are excluded from harmonic thermodynamics.
+        mask = self.nu_THz > 0
+        nu, density = self.nu_THz[mask], self.g_nu_THz[mask]
+        energy = h * nu[:, None]
+        with np.errstate(over="ignore", under="ignore"):
+            x = np.divide(
+                energy,
+                kB * temperature[None, :],
+                out=np.full((len(nu), len(temperature)), np.inf),
+                where=temperature[None, :] > 0,
+            )
+            denominator = -np.expm1(-x)
+            occupation = np.exp(-x) / denominator
+            x_occupation = np.multiply(x, occupation, out=np.zeros_like(x), where=np.isfinite(x))
+        h_vib = trapezoid(density[:, None] * energy * (0.5 + occupation), nu, axis=0) * kJmol
+        s_vib = R * trapezoid(density[:, None] * (x_occupation - np.log(denominator)), nu, axis=0)
+        if was_scalar:
+            return h_vib[0], s_vib[0]
+        return h_vib, s_vib
 
-        '''
-        nu = self.nu_THz
-        g_nu = self.g_nu_THz
-        x = h * nu / (kB * T)
+    def get_vibrational_enthalpy(self, T):
+        """Harmonic internal energy in kJ/mol, including zero-point energy.
 
-        # exclude negative frequencies (imaginary modes) from the integration
-        mask = nu > 0
-        nu = nu[mask]
-        g_nu = g_nu[mask]
-        x = x[mask]
+        The DOS integral determines the mode count; values are per mole of the
+        entity represented by the DOS (per atom only for a per-atom DOS).
+        """
+        self.vibrational_enthalpy = self._thermal_terms(T)[0]
+        return self.vibrational_enthalpy
 
-        enthalpy = np.trapz(g_nu * ( h * nu / 2 + h * nu / (np.exp(x) - 1)), nu)   # in eV
-        enthalpy *= kJmol     # convert eV to kJ/mol
-        self.vibrational_enthalpy = enthalpy
-        return enthalpy
-    
+    def get_vibrational_entropy(self, T):
+        """Harmonic entropy in kJ/(mol K); exactly zero at zero temperature."""
+        self.vibrational_entropy = self._thermal_terms(T)[1]
+        return self.vibrational_entropy
 
-    def get_vibrational_entropy(self, T: np.ndarray) -> np.ndarray:
-        '''Calculate the vibrational entropy at a given temperature.
-        
-        Parameters
-        ----------
-        T : np.ndarray
-            Temperature in Kelvin.
-        
-        Returns
-        -------
-        np.ndarray
-            Vibrational entropy in kJ/(mol*K).
-        '''
-        nu = self.nu_THz
-        g_nu = self.g_nu_THz
-        x = h * nu / (kB * T)
-
-        # exclude negative frequencies (imaginary modes) from the integration
-        mask = nu > 0
-        nu = nu[mask]
-        g_nu = g_nu[mask]
-        x = x[mask]
-
-        entropy = R * np.trapz(g_nu * ( x / (np.exp(x) - 1) - np.log(1 - np.exp(-x)) ), nu)     # in kJ/(mol*K)
-        
-        self.vibrational_entropy = entropy
-        return entropy
-
-
-    def get_vibrational_free_energy(self, T: np.ndarray) -> np.ndarray:
-        '''Calculate the vibrational free energy at a given temperature.
-        
-        Parameters
-        ----------
-        T : np.ndarray
-            Temperature in Kelvin.
-        
-        Returns
-        -------
-        np.ndarray
-            Vibrational free energy in kJ/mol.
-        '''
-        if self.vibrational_enthalpy is None:
-            enthalpy = self.get_vibrational_enthalpy(T)
-        else:
-            enthalpy = self.vibrational_enthalpy
-        
-        if self.vibrational_entropy is None:
-            entropy = self.get_vibrational_entropy(T)
-        else:
-            entropy = self.vibrational_entropy
-        
-        free_energy = enthalpy - T * entropy
-        
-        self.vibrational_free_energy = free_energy
-        return free_energy
-
+    def get_vibrational_free_energy(self, T):
+        """H - TS, recomputed for the requested temperatures."""
+        enthalpy, entropy = self._thermal_terms(T)
+        self.vibrational_enthalpy, self.vibrational_entropy = enthalpy, entropy
+        self.vibrational_free_energy = enthalpy - np.asarray(T) * entropy
+        return self.vibrational_free_energy
 
 
 class VibrationalSubregularModel:
-    '''Class for vibrational properties of subregular solutions.'''
-    def __init__(self,
-                 x: np.ndarray,
-                 vdos_AA: pd.DataFrame,
-                 vdos_BB: pd.DataFrame,
-                 vdos_AB: pd.DataFrame,
-                 vdos_BA: pd.DataFrame,
-                 frequency_unit: str = 'cm^-1'):
+    """Class for vibrational properties of subregular solutions."""
+
+    def __init__(
+        self,
+        x: np.ndarray,
+        vdos_AA: pd.DataFrame,
+        vdos_BB: pd.DataFrame,
+        vdos_AB: pd.DataFrame,
+        vdos_BA: pd.DataFrame,
+        frequency_unit: str = "cm^-1",
+    ):
         self.x = x
         self.vibrational_AA = Vibrational(vdos_AA, frequency_unit)
         self.vibrational_BB = Vibrational(vdos_BB, frequency_unit)

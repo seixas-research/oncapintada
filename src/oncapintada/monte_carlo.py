@@ -24,15 +24,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
 class ChemicalSwapMC:
     def __init__(self):
-        pass
+        raise NotImplementedError(f"{type(self).__name__} is not implemented yet.")
+
 
 class BasinHopping:
     def __init__(self):
-        pass
+        raise NotImplementedError(f"{type(self).__name__} is not implemented yet.")
+
 
 class MDMC:
     def __init__(self):
-        pass
-
+        raise NotImplementedError(f"{type(self).__name__} is not implemented yet.")

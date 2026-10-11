@@ -1,14 +1,13 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 import numpy as np
+import pandas as pd
 import pytest
 from ase import Atoms
-import pandas as pd
 from pandas.testing import assert_frame_equal
+
 from oncapintada.bonds_counter import BondsCounter  # Onça Pintada
 
-@pytest.fixture # fixture to create a simple water molecule
+
+@pytest.fixture  # fixture to create a simple water molecule
 def water_atoms() -> Atoms:
     return Atoms("H2O", positions=[[0, 0, 0], [0, 0, 0.74], [0.96, 0, 0]])
 

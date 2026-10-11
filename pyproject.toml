@@ -13,13 +13,12 @@ readme = "README.md"
 license = {file = "LICENSE"} # MIT License
 requires-python = ">=3.10"
 dependencies = [
-    'numpy',
-    'pandas',
-    'ase',
-    'scipy',
-    'matplotlib',
-    'pytest',
-    'pyyaml'
+    'numpy>=1.23',
+    'pandas>=1.5',
+    'ase>=3.23',
+    'scipy>=1.10',
+    'matplotlib>=3.6',
+    'pyyaml>=6'
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -35,3 +34,19 @@ classifiers = [
 
 [tool.hatch.version]
 path = "src/oncapintada/_version.py"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.9", "build>=1"]
+docs = ["sphinx>=7", "myst-parser>=2", "furo>=2024.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

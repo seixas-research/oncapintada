@@ -27,18 +27,22 @@
 # from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence, Union, Optional
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 from ase import Atoms
-from ase.io import read, write
+from ase.io import read
+
+from ._validation import chemical_species, exact_counts, fractions, positive_integer, site_indices
 
 MaskType = Union[str, Sequence[int], Sequence[bool]]
+
 
 @dataclass
 class DisorderedAlloyConfig:
     """Container for a generated disordered alloy configuration."""
+
     atoms: Atoms
     site_table: pd.DataFrame  # mapping between original and substituted sites
 
@@ -49,8 +53,8 @@ class DisorderedAlloyGenerator:
 
     Parameters
     ----------
-    template_file : str
-        Path to the template structure file (e.g. XYZ file).
+    template_file : str or ase.Atoms
+        Template ASE structure or path to a structure file (e.g. XYZ file).
     substitution_mask : str or sequence of int or sequence of bool
         Mask selecting which sites will be substituted:
         - str: chemical symbol, e.g. "Ni" → all Ni atoms are candidates.
@@ -90,22 +94,14 @@ class DisorderedAlloyGenerator:
     ) -> None:
         # Load template structure
         self.template_file = template_file
-        self.template_atoms: Atoms = read(template_file)
+        self.template_atoms: Atoms = (
+            template_file.copy() if isinstance(template_file, Atoms) else read(template_file)
+        )
         self.n_atoms: int = len(self.template_atoms)
 
         # Store new elements and concentrations
-        self.new_elements: List[str] = list(new_elements)
-        self.concentrations = np.array(concentrations, dtype=float)
-        if self.concentrations.ndim != 1:
-            raise ValueError("concentrations must be a 1D sequence")
-        if len(self.new_elements) != len(self.concentrations):
-            raise ValueError("new_elements and concentrations must have same length")
-
-        # Normalize concentrations to sum to 1
-        total = self.concentrations.sum()
-        if total <= 0:
-            raise ValueError("concentrations must sum to a positive value")
-        self.concentrations /= total
+        self.new_elements: List[str] = list(chemical_species(new_elements))
+        self.concentrations = fractions(concentrations, len(self.new_elements), normalize=True)
 
         # Random generator
         self._rng = np.random.default_rng(seed)
@@ -123,34 +119,7 @@ class DisorderedAlloyGenerator:
     # ------------------------------------------------------------------ #
     def _parse_mask(self, mask: MaskType) -> np.ndarray:
         """Convert the user mask into an array of atom indices."""
-        symbols = np.array(self.template_atoms.get_chemical_symbols())
-
-        # Case 1: mask is a chemical symbol (e.g. "Ni")
-        if isinstance(mask, str):
-            idx = np.where(symbols == mask)[0]
-            return idx.astype(int)
-
-        mask = np.asarray(mask)
-
-        # Case 2: mask is a list/array of bool
-        if mask.dtype == bool:
-            if mask.shape[0] != self.n_atoms:
-                raise ValueError(
-                    "Boolean mask length must match number of atoms in template."
-                )
-            return np.where(mask)[0].astype(int)
-
-        # Case 3: mask is a list/array of indices
-        if np.issubdtype(mask.dtype, np.integer):
-            # Basic sanity check
-            if (mask < 0).any() or (mask >= self.n_atoms).any():
-                raise ValueError("Substitution indices out of range.")
-            return mask.astype(int)
-
-        raise TypeError(
-            "substitution_mask must be a chemical symbol (str), "
-            "a sequence of int, or a sequence of bool."
-        )
+        return site_indices(mask, self.template_atoms)
 
     def _build_base_site_table(self) -> pd.DataFrame:
         """Create a DataFrame describing the sites that can be substituted."""
@@ -174,19 +143,7 @@ class DisorderedAlloyGenerator:
         - counts.sum() == n_sites
         - counts are as close as possible to n_sites * concentrations
         """
-        raw_counts = self.concentrations * n_sites
-        base_counts = np.floor(raw_counts).astype(int)
-        remainder = n_sites - base_counts.sum()
-
-        if remainder > 0:
-            # Assign remaining sites to elements with largest fractional parts
-            fractional = raw_counts - base_counts
-            order = np.argsort(fractional)[::-1]  # descending
-            for i in range(remainder):
-                base_counts[order[i % len(base_counts)]] += 1
-
-        return base_counts
-
+        return exact_counts(self.concentrations, n_sites)
 
     def generate_configuration(self, seed: Optional[int] = None) -> DisorderedAlloyConfig:
         """
@@ -200,10 +157,7 @@ class DisorderedAlloyGenerator:
         Returns
         -------
         DisorderedAlloyConfig
-            Container with:
-            - atoms: ASE Atoms object of the disordered alloy.
-            - site_table: pandas DataFrame describing substitutions
-                          (original and new symbols at each substituted site).
+            ASE atoms and a pandas table recording original and substituted site symbols.
         """
         rng = np.random.default_rng(seed) if seed is not None else self._rng
 
@@ -249,6 +203,7 @@ class DisorderedAlloyGenerator:
         -------
         list of DisorderedAlloyConfig
         """
+        n_configs = positive_integer(n_configs, "n_configs")
         if base_seed is not None:
             rng = np.random.default_rng(base_seed)
             seeds = rng.integers(0, 2**32 - 1, size=n_configs)

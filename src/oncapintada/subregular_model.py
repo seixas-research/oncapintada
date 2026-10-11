@@ -24,10 +24,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import numpy as np
-from typing import Optional, Union
 from itertools import combinations_with_replacement
-from .constants import kJmol, R
+from typing import Optional, Union
+
+import numpy as np
+from scipy.special import xlogy
+
+from ._validation import positive_integer
+from .constants import R, kJmol
 
 
 class BaseAlloy:
@@ -44,8 +48,15 @@ class BaseAlloy:
     @energy_matrix.setter
     def energy_matrix(self, value: Optional[np.ndarray]):
         if value is not None:
-            if value.ndim != 2 or value.shape[0] != value.shape[1]:
-                raise ValueError("Energy matrix must be square.")
+            value = np.asarray(value, dtype=float)
+            if value.ndim != 2 or value.shape[0] != value.shape[1] or value.shape[0] < 2:
+                raise ValueError("Energy matrix must be square with at least 2 components.")
+            if isinstance(self, BinaryAlloy) and value.shape != (2, 2):
+                raise ValueError("BinaryAlloy energy matrix must be 2 by 2.")
+            if not np.isfinite(value).all():
+                raise ValueError("Energy matrix must contain finite values.")
+            value = value.copy()
+            value.setflags(write=False)
         self._energy_matrix = value
 
     @property
@@ -54,15 +65,17 @@ class BaseAlloy:
 
     @dilution.setter
     def dilution(self, value: float):
-        if not 0.0 <= value <= 1.0:
+        if not np.isfinite(value) or not 0.0 <= value <= 1.0:
             raise ValueError("Dilution parameter must be between 0 and 1.")
         self._dilution = value
 
     def Mij(self) -> np.ndarray:
         """
-        Calculate the Mij interaction matrix from the energy matrix and dilution parameter:
+        Calculate the Mij interaction matrix from the energy matrix and dilution parameter::
+
             M_ij = E_ij - ( x0 * E_ii + (1-x0) * E_jj )
-        with i = solute (row) and j = solvent (column). Same units as the energy matrix.
+
+        Here i = solute (row) and j = solvent (column). Same units as the energy matrix.
         """
         E = self.energy_matrix
         if E is None:
@@ -88,6 +101,25 @@ class MultiComponentAlloy(BaseAlloy):
             raise ValueError("Energy matrix must be set to determine the number of components.")
         return self.energy_matrix.shape[0]
 
+    def _prepare_compositions(self, x):
+        x = np.asarray(x, dtype=float)
+        was_1d = x.ndim == 1
+        if x.ndim not in (1, 2):
+            raise ValueError("Composition must be a 1D vector or 2D array.")
+        x = np.atleast_2d(x)
+        n = self._n_components() if self.energy_matrix is not None else x.shape[1]
+        if x.shape[1] != n or n < 2:
+            raise ValueError(
+                f"Composition array x must have {n} columns corresponding to the number of components."
+            )
+        if not np.isfinite(x).all():
+            raise ValueError("Composition must contain finite values.")
+        if np.any(x < 0):
+            raise ValueError("Composition array x must have non-negative values.")
+        if not np.allclose(x.sum(axis=1), 1.0, atol=1e-4, rtol=0):
+            raise ValueError("Each row of composition array x must sum to 1.")
+        return x, was_1d
+
     def simplex_grid(self, n_components: Optional[int] = None, resolution: int = 10) -> np.ndarray:
         """
         Generate a grid of compositions on the (n_components - 1)-simplex,
@@ -98,15 +130,17 @@ class MultiComponentAlloy(BaseAlloy):
         n = self._n_components() if n_components is None else n_components
         if n < 2:
             raise ValueError("Number of components must be at least 2.")
-        if not isinstance(resolution, int):
-            raise TypeError("Resolution must be an integer.")
-        if resolution < 1:
-            raise ValueError("Resolution must be a positive integer.")
+        n = positive_integer(n, "Number of components")
+        resolution = positive_integer(resolution, "Resolution")
 
-        grid = [np.bincount(c, minlength=n) for c in combinations_with_replacement(range(n), resolution)]
+        grid = [
+            np.bincount(c, minlength=n) for c in combinations_with_replacement(range(n), resolution)
+        ]
         return np.array(grid) / resolution
 
-    def line_profile(self, npoints: int = 11, y1: Optional[np.ndarray] = None, y2: Optional[np.ndarray] = None) -> np.ndarray:
+    def line_profile(
+        self, npoints: int = 11, y1: Optional[np.ndarray] = None, y2: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """
         Generate compositions along the line between y1 and y2 in the simplex:
             x(p) = y1 * (1-p) + y2 * p, with p in [0, 1].
@@ -115,9 +149,14 @@ class MultiComponentAlloy(BaseAlloy):
         """
         if not isinstance(y1, np.ndarray) or not isinstance(y2, np.ndarray):
             raise ValueError("y1 and y2 must be numpy arrays.")
-        if y1.shape != y2.shape:
+        if y1.ndim != 1 or y2.ndim != 1 or y1.shape != y2.shape:
             raise ValueError("y1 and y2 must have the same number of components.")
 
+        if len(y1) < 2 or (self.energy_matrix is not None and len(y1) != self._n_components()):
+            raise ValueError("Line endpoints must match the number of components.")
+        if not np.isfinite(y1).all() or not np.isfinite(y2).all():
+            raise ValueError("Line endpoints must be finite.")
+        npoints = positive_integer(npoints, "npoints")
         tol = 1e-4
         if not np.isclose(y1.sum(), 1.0, atol=tol) or not np.isclose(y2.sum(), 1.0, atol=tol):
             raise ValueError("y1 and y2 compositions must sum to 1.")
@@ -129,7 +168,9 @@ class MultiComponentAlloy(BaseAlloy):
         p = np.linspace(0, 1, npoints)[:, np.newaxis]
         return y1 * (1 - p) + y2 * p
 
-    def enthalpy_of_mixing(self, x: np.ndarray, normalized: bool = True, unit: str = "kJ/mol") -> np.ndarray:
+    def enthalpy_of_mixing(
+        self, x: np.ndarray, normalized: bool = True, unit: str = "kJ/mol"
+    ) -> np.ndarray:
         """
         Calculate the enthalpy of mixing (vectorized):
             H_mix = sum_{i<j} (M_ij * x_j + M_ji * x_i) * x_i * x_j / (x_i + x_j)
@@ -139,18 +180,8 @@ class MultiComponentAlloy(BaseAlloy):
         if unit not in ["eV/atom", "kJ/mol"]:
             raise ValueError("Invalid unit. Supported units are 'eV/atom' and 'kJ/mol'.")
 
-        was_1d = np.asarray(x).ndim == 1
-        x = np.atleast_2d(np.asarray(x, dtype=float))
+        x, was_1d = self._prepare_compositions(x)
         m = self.Mij()
-        n = m.shape[0]
-        eps = 1e-8
-
-        if x.shape[1] != n:
-            raise ValueError(f"Composition array x must have {n} columns corresponding to the number of components.")
-        if not np.allclose(x.sum(axis=1), 1.0, atol=1e-4):
-            raise ValueError("Each row of composition array x must sum to 1.")
-        if np.any(x < 0):
-            raise ValueError("Composition array x must have non-negative values.")
 
         # (M_ij * x_j) and (M_ji * x_i) for all pairs, shape (Samples, i, j)
         term1 = m[np.newaxis, :, :] * x[:, np.newaxis, :]
@@ -160,8 +191,10 @@ class MultiComponentAlloy(BaseAlloy):
         h_matrix = (term1 + term2) * xi_xj
 
         if normalized:
-            xi_plus_xj = x[:, :, np.newaxis] + x[:, np.newaxis, :] + eps
-            h_matrix /= xi_plus_xj
+            xi_plus_xj = x[:, :, np.newaxis] + x[:, np.newaxis, :]
+            h_matrix = np.divide(
+                h_matrix, xi_plus_xj, out=np.zeros_like(h_matrix), where=xi_plus_xj > 0
+            )
 
         # Sum over upper triangle (i < j) to avoid double counting
         h_mix = np.sum(np.triu(h_matrix, k=1), axis=(1, 2))
@@ -174,22 +207,27 @@ class MultiComponentAlloy(BaseAlloy):
         if unit not in ["eV/(atom*K)", "kJ/(mol*K)"]:
             raise ValueError("Invalid unit. Supported units are 'eV/(atom*K)' and 'kJ/(mol*K)'.")
 
-        x = np.clip(x, 1e-12, 1.0)
-        s_config = -R * np.sum(x * np.log(x), axis=-1)
+        x, was_1d = self._prepare_compositions(x)
+        s_config = -R * np.sum(xlogy(x, x), axis=-1)
+        if was_1d:
+            s_config = s_config[0]
 
         if unit == "eV/(atom*K)":
             return s_config / kJmol
         return s_config
 
-    def gibbs_free_energy_of_mixing(self, x: np.ndarray, t: Union[float, np.ndarray],
-                                    unit: str = "kJ/mol") -> np.ndarray:
+    def gibbs_free_energy_of_mixing(
+        self, x: np.ndarray, t: Union[float, np.ndarray], unit: str = "kJ/mol"
+    ) -> np.ndarray:
         """
         G_mix = H_mix - T * S_config
 
         Returns an array of shape (N_samples, N_temperatures).
         """
         x = np.atleast_2d(np.asarray(x, dtype=float))
-        t = np.atleast_1d(t)
+        t = np.atleast_1d(np.asarray(t, dtype=float))
+        if t.ndim != 1 or not np.isfinite(t).all() or np.any(t < 0):
+            raise ValueError("Temperatures must be a finite, non-negative scalar or 1D array.")
 
         h = np.atleast_1d(self.enthalpy_of_mixing(x, unit=unit))
         s = np.atleast_1d(self.configurational_entropy(x, unit="kJ/(mol*K)"))
@@ -211,18 +249,26 @@ class BinaryAlloy(MultiComponentAlloy):
         """Converts composition x into rows [1-x, x]; passes 2D arrays through unchanged."""
         x = np.asarray(x, dtype=float)
         if x.ndim == 2:
+            if x.shape[1] != 2:
+                raise ValueError("Binary composition arrays must have 2 columns.")
             return x
+        if x.ndim > 2:
+            raise ValueError("Binary composition must be scalar, 1D or 2D.")
         x = np.atleast_1d(x)
         return np.column_stack([1 - x, x])
 
-    def enthalpy_of_mixing(self, x: Union[float, np.ndarray], normalized: bool = False,
-                           unit: str = "kJ/mol") -> np.ndarray:
+    def enthalpy_of_mixing(
+        self, x: Union[float, np.ndarray], normalized: bool = False, unit: str = "kJ/mol"
+    ) -> np.ndarray:
         # For a binary alloy x_i + x_j = 1, so the normalization denominator is 1
         return super().enthalpy_of_mixing(self._prepare_x(x), normalized=normalized, unit=unit)
 
-    def configurational_entropy(self, x: Union[float, np.ndarray], unit: str = "kJ/(mol*K)") -> np.ndarray:
+    def configurational_entropy(
+        self, x: Union[float, np.ndarray], unit: str = "kJ/(mol*K)"
+    ) -> np.ndarray:
         return super().configurational_entropy(self._prepare_x(x), unit=unit)
 
-    def gibbs_free_energy_of_mixing(self, x: Union[float, np.ndarray], t: Union[float, np.ndarray],
-                                    unit: str = "kJ/mol") -> np.ndarray:
+    def gibbs_free_energy_of_mixing(
+        self, x: Union[float, np.ndarray], t: Union[float, np.ndarray], unit: str = "kJ/mol"
+    ) -> np.ndarray:
         return super().gibbs_free_energy_of_mixing(self._prepare_x(x), t, unit=unit)
